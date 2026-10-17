@@ -44,17 +44,11 @@ void main() {
   >
   createProviders() async {
     final settings = SettingsProvider(createBusinessTestPreferences());
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await settings.loaded;
     await assistants.loaded;
-    final instructions = InstructionInjectionProvider(
-      preferences: createBusinessTestPreferences(),
-    );
-    final worldBooks = WorldBookProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final instructions = InstructionInjectionProvider();
+    final worldBooks = WorldBookProvider();
     final usage = _RecordingUsage(
       chatService: ChatService(),
       settings: settings,

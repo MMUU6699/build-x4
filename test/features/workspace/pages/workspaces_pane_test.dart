@@ -9,8 +9,6 @@ import 'package:Kelivo/features/workspace/pages/workspace_files_desktop_layout.d
 import 'package:Kelivo/features/workspace/widgets/workspace_tools_pane.dart';
 import 'package:Kelivo/shared/widgets/ios_switch.dart';
 
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/providers/workspace_provider.dart';
 import 'package:Kelivo/features/workspace/pages/workspaces_page.dart';
@@ -18,7 +16,6 @@ import 'package:Kelivo/icons/lucide_adapter.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:Kelivo/shared/widgets/form_sheet.dart';
 import 'package:Kelivo/shared/widgets/ios_settings_rows.dart';
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -97,7 +94,6 @@ void main() {
 
   late Directory tempDir;
   late PathProviderPlatform previousPathProvider;
-  late AppDatabase database;
   late WorkspaceProvider workspaces;
 
   setUp(() async {
@@ -105,15 +101,13 @@ void main() {
     tempDir = Directory.systemTemp.createTempSync('kelivo_workspaces_pane_');
     previousPathProvider = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
-    database = AppDatabase(NativeDatabase.memory());
-    await database.customSelect('SELECT 1;').getSingle();
-    workspaces = WorkspaceProvider(store: ExtensionEntityStore(database));
+    workspaces = WorkspaceProvider();
     await workspaces.loaded;
   });
 
   tearDown(() async {
     PathProviderPlatform.instance = previousPathProvider;
-    await database.close();
+    workspaces.dispose();
     if (tempDir.existsSync()) {
       tempDir.deleteSync(recursive: true);
     }
@@ -191,15 +185,6 @@ void main() {
       );
       expect(tester.widget<IosSwitch>(toggle).value, isFalse);
       expect(workspaces.byId(second.id)!.isToolEnabled('read_file'), isTrue);
-      await tester.runAsync(() async {
-        final reloaded = WorkspaceProvider(
-          store: ExtensionEntityStore(database),
-        );
-        await reloaded.loaded;
-        expect(reloaded.byId(first.id)!.isToolEnabled('read_file'), isFalse);
-        expect(reloaded.byId(second.id)!.isToolEnabled('read_file'), isTrue);
-        reloaded.dispose();
-      });
       await selectTab(l10n.workspaceEntryFiles);
       expect(find.text('README.txt'), findsOneWidget);
       await selectTab(l10n.workspaceToolsTitle);

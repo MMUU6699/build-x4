@@ -11,7 +11,7 @@ class _PageRequest {
   _PageRequest({required this.conversationId, required this.completer});
 
   final String conversationId;
-  final Completer<LoadedTimelinePage?> completer;
+  final Completer<LoadedTimelinePage> completer;
 }
 
 class _ControlledChatService extends ChatService {
@@ -24,15 +24,18 @@ class _ControlledChatService extends ChatService {
   int groupLoadFailuresRemaining = 0;
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) {
-    final completer = Completer<LoadedTimelinePage?>();
+    final completer = Completer<LoadedTimelinePage>();
     pageRequests.add(
       _PageRequest(conversationId: conversationId, completer: completer),
     );
@@ -45,7 +48,6 @@ class _ControlledChatService extends ChatService {
     required int startIndex,
     int? totalSlotCount,
   }) {
-    final timestamp = DateTime(2026, 7, 11);
     request.completer.complete(
       LoadedTimelinePage(
         conversationId: request.conversationId,
@@ -55,13 +57,9 @@ class _ControlledChatService extends ChatService {
           for (final (offset, message) in messages.indexed)
             LoadedTimelineSlot(
               identity: ActiveTimelineSlot(
-                slotId: message.groupId ?? message.id,
                 revisionId: message.id,
-                parentRevisionId: null,
-                role: message.role,
-                createdAt: timestamp,
-                updatedAt: timestamp,
-                finalizedAt: timestamp,
+                groupId: message.groupId ?? message.id,
+                version: message.version,
                 versionCount: 1,
                 logicalIndex: startIndex + offset,
               ),
@@ -94,7 +92,6 @@ class _ControlledChatService extends ChatService {
   Map<String, int> getVersionSelections(String conversationId) =>
       const <String, int>{'group-a': 1};
 
-  @override
   List<ChatMessage> getMessagesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -111,10 +108,13 @@ class _ControlledChatService extends ChatService {
 
   @override
   Future<List<ChatMessage>> loadMessageVersionHeaders(
-    String conversationId,
-    Iterable<String> groupIds,
-  ) async => [
-    for (final message in await loadMessagesForGroups(conversationId, groupIds))
+    String conversationId, [
+    Iterable<String>? groupIds,
+  ]) async => [
+    for (final message in await loadMessagesForGroups(
+      conversationId,
+      groupIds ?? const [],
+    ))
       message.copyWith(content: ''),
   ];
 
@@ -134,13 +134,11 @@ class _ControlledChatService extends ChatService {
     return getMessagesForGroups(conversationId, groupIds);
   }
 
-  @override
   Map<String, int> getFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
   ) => const <String, int>{};
 
-  @override
   Future<Map<String, int>> loadFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,

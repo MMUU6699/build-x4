@@ -2,59 +2,34 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File;
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../../../core/services/chat/prompt_transformer.dart';
-import '../../../core/services/memory/memory_prompts.dart';
 import 'package:provider/provider.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_sliders/sliders.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../chat/widgets/chat_message_widget.dart';
 import '../../chat/widgets/chat_gradient_background.dart';
 import '../../home/widgets/assistant_avatar.dart';
-import '../../model/widgets/model_select_sheet.dart';
 import '../../../core/models/assistant.dart';
-import '../widgets/assistant_reasoning_picker.dart';
-import '../../chat/widgets/reasoning_level_sheet.dart';
 import '../../../core/models/chat_message.dart';
-import '../../../core/models/conversation.dart';
 import '../../../core/models/preset_message.dart';
-import '../../../core/models/quick_phrase.dart';
 import '../../../core/providers/assistant_provider.dart';
-import '../../../core/providers/mcp_provider.dart';
-import '../../../core/providers/quick_phrase_provider.dart';
-import '../../../core/models/memory_entry.dart';
-import '../../../core/providers/memory_provider.dart';
-import '../../../core/providers/memory_provider_v2.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/services/chat/chat_service.dart';
-import '../../../core/services/memory/memory_gatekeeper.dart';
-import '../../../core/services/memory/memory_pipeline.dart';
-import '../../settings/pages/memory_settings_page.dart';
-import '../../settings/widgets/memory_ui.dart';
 import '../../../shared/widgets/tip_icon.dart';
 import '../../../core/services/haptics.dart';
 import '../../../desktop/desktop_context_menu.dart';
-import '../../../desktop/setting/memory_dialogs.dart';
-import '../../../desktop/widgets/desktop_select_dropdown.dart';
-import '../../home/services/local_tool_toggle.dart';
-import '../../home/services/local_tools_service.dart';
-import '../../../core/models/health_data_type.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/widgets/emoji_picker_dialog.dart';
 import '../../../shared/widgets/emoji_text.dart';
-import '../../../shared/widgets/ios_form_text_field.dart';
 import '../../../shared/widgets/ios_switch.dart';
 import '../../../shared/widgets/ios_tactile.dart';
 import '../../../shared/widgets/snackbar.dart';
@@ -68,20 +43,12 @@ import '../utils/assistant_edit_tab_layout.dart';
 import 'assistant_regex_tab.dart';
 import 'assistant_settings_edit_skills_tab.dart';
 import '../widgets/assistant_default_workspace_row.dart';
-import 'health_data_settings_page.dart';
-import '../../settings/pages/phone_control_settings_page.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
 import 'package:Kelivo/shared/widgets/section_card.dart';
 
 part 'assistant_settings_edit_basic_tab.dart';
 part '../widgets/assistant_gradient_settings.dart';
 part 'assistant_settings_edit_prompt_tab.dart';
-part 'assistant_settings_edit_memory_tab.dart';
-part 'assistant_settings_edit_memory_tab_legacy.dart';
-part 'assistant_settings_edit_local_tools_tab.dart';
-part 'assistant_settings_edit_mcp_tab.dart';
-part 'assistant_settings_edit_quick_phrase_tab.dart';
-part 'assistant_settings_edit_custom_request_tab.dart';
 
 const int _contextMessageMin = Assistant.minContextMessageSize;
 const int _contextMessageMax = Assistant.maxContextMessageSize;
@@ -119,40 +86,10 @@ List<_AssistantEditTabSpec> _assistantEditTabSpecs(
       child: _PromptTab(assistantId: assistantId),
     ),
     _AssistantEditTabSpec(
-      id: assistantEditTabMemory,
-      label: l10n.assistantEditPageMemoryTab,
-      icon: Lucide.Brain,
-      child: _MemoryTab(assistantId: assistantId),
-    ),
-    _AssistantEditTabSpec(
-      id: assistantEditTabLocalTools,
-      label: l10n.assistantEditPageLocalToolsTab,
-      icon: Lucide.Wrench,
-      child: _LocalToolsTab(assistantId: assistantId),
-    ),
-    _AssistantEditTabSpec(
       id: assistantEditTabSkills,
       label: l10n.skillsTab,
       icon: Lucide.WandSparkles,
       child: AssistantSettingsEditSkillsTab(assistantId: assistantId),
-    ),
-    _AssistantEditTabSpec(
-      id: assistantEditTabMcp,
-      label: l10n.assistantEditPageMcpTab,
-      icon: Lucide.Terminal,
-      child: _McpTab(assistantId: assistantId),
-    ),
-    _AssistantEditTabSpec(
-      id: assistantEditTabQuickPhrase,
-      label: l10n.assistantEditPageQuickPhraseTab,
-      icon: Lucide.Zap,
-      child: _QuickPhraseTab(assistantId: assistantId),
-    ),
-    _AssistantEditTabSpec(
-      id: assistantEditTabCustom,
-      label: l10n.assistantEditPageCustomTab,
-      icon: Lucide.EthernetPort,
-      child: _CustomRequestTab(assistantId: assistantId),
     ),
     _AssistantEditTabSpec(
       id: assistantEditTabRegex,
@@ -1632,17 +1569,7 @@ class _IosButtonState extends State<_IosButton> {
 
 // ===== Desktop Assistant Dialog (reuses mobile tabs) =====
 
-enum _AssistantDesktopMenu {
-  basic,
-  prompts,
-  memory,
-  localTools,
-  skills,
-  mcp,
-  quick,
-  custom,
-  regex,
-}
+enum _AssistantDesktopMenu { basic, prompts, skills, regex }
 
 Future<void> openAssistantBasicSettings(
   BuildContext context, {
@@ -1761,20 +1688,8 @@ class _DesktopAssistantDialogShellState
                         );
                       case _AssistantDesktopMenu.prompts:
                         return _PromptTab(assistantId: widget.assistantId);
-                      case _AssistantDesktopMenu.memory:
-                        return _MemoryTab(assistantId: widget.assistantId);
-                      case _AssistantDesktopMenu.localTools:
-                        return _LocalToolsTab(assistantId: widget.assistantId);
                       case _AssistantDesktopMenu.skills:
                         return AssistantSettingsEditSkillsTab(
-                          assistantId: widget.assistantId,
-                        );
-                      case _AssistantDesktopMenu.mcp:
-                        return _McpTab(assistantId: widget.assistantId);
-                      case _AssistantDesktopMenu.quick:
-                        return _QuickPhraseTab(assistantId: widget.assistantId);
-                      case _AssistantDesktopMenu.custom:
-                        return _CustomRequestTab(
                           assistantId: widget.assistantId,
                         );
                       case _AssistantDesktopMenu.regex:
@@ -1811,12 +1726,7 @@ class _DesktopAssistantMenuState extends State<_DesktopAssistantMenu> {
     final items = <(_AssistantDesktopMenu, String)>[
       (_AssistantDesktopMenu.basic, l10n.assistantEditPageBasicTab),
       (_AssistantDesktopMenu.prompts, l10n.assistantEditPagePromptsTab),
-      (_AssistantDesktopMenu.memory, l10n.assistantEditPageMemoryTab),
-      (_AssistantDesktopMenu.localTools, l10n.assistantEditPageLocalToolsTab),
       (_AssistantDesktopMenu.skills, l10n.skillsTab),
-      (_AssistantDesktopMenu.mcp, l10n.assistantEditPageMcpTab),
-      (_AssistantDesktopMenu.quick, l10n.assistantEditPageQuickPhraseTab),
-      (_AssistantDesktopMenu.custom, l10n.assistantEditPageCustomTab),
       (_AssistantDesktopMenu.regex, l10n.assistantEditPageRegexTab),
     ];
     return SizedBox(
@@ -2482,23 +2392,7 @@ class _DesktopAssistantBasicPaneState
                     onEnter: (_) => setState(() => _hoverChatModel = true),
                     onExit: (_) => setState(() => _hoverChatModel = false),
                     child: _TactileRow(
-                      onTap: () async {
-                        final assistantProvider = context
-                            .read<AssistantProvider>();
-                        final sel = await showModelSelector(
-                          context,
-                          initialProviderKey: a.chatModelProvider,
-                          initialModelId: a.chatModelId,
-                        );
-                        if (sel != null) {
-                          await assistantProvider.updateAssistant(
-                            a.copyWith(
-                              chatModelProvider: sel.providerKey,
-                              chatModelId: sel.modelId,
-                            ),
-                          );
-                        }
-                      },
+                      onTap: () {},
                       pressedScale: 0.98,
                       builder: (pressed) {
                         final base = context.appColors.surfaceFill;

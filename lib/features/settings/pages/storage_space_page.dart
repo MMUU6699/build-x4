@@ -17,9 +17,7 @@ import '../../../shared/widgets/ios_tile_button.dart';
 import '../../../shared/widgets/snackbar.dart';
 import '../../../theme/app_font_weights.dart';
 import '../../../utils/platform_utils.dart';
-import '../../backup/pages/local_snapshots_page.dart';
 import '../../chat/pages/image_viewer_page.dart';
-import '../../workspace/pages/environment_page.dart';
 import '../../workspace/pages/skills_page.dart';
 import '../../workspace/pages/workspaces_page.dart';
 import 'log_viewer_page.dart';
@@ -1761,30 +1759,12 @@ class _CategoryDetail extends StatelessWidget {
         enabled: !clearing && onClearDisplacedDatabases != null,
         onTap: () => onClearDisplacedDatabases?.call(),
       );
-    } else if (category.key == StorageUsageCategoryKey.localSnapshots) {
-      // Managed rather than cleared: each of these is a restorable copy, and
-      // the screen that lists them can say what every one of them holds.
-      actions = IosTileButton(
-        label: l10n.localSnapshotManageCopies,
-        icon: Lucide.ChevronRight,
-        enabled: !clearing,
-        onTap: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => const LocalSnapshotsPage()),
-        ),
-      );
     } else if (category.key == StorageUsageCategoryKey.workspaceFiles) {
       actions = IosTileButton(
         label: l10n.workspaceEntryManage,
         icon: Lucide.ChevronRight,
         enabled: !clearing,
         onTap: () => openManager(const WorkspacesPage()),
-      );
-    } else if (category.key == StorageUsageCategoryKey.sandboxEnvironment) {
-      actions = IosTileButton(
-        label: l10n.workspaceEnvTitle,
-        icon: Lucide.ChevronRight,
-        enabled: !clearing,
-        onTap: () => openManager(const EnvironmentPage()),
       );
     } else if (category.key == StorageUsageCategoryKey.skills) {
       actions = IosTileButton(

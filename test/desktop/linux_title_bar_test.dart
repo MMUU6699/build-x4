@@ -83,7 +83,7 @@ void main() {
       expect(reloaded.linuxHideTitleBar, isFalse);
       final local = await SharedPreferences.getInstance();
       expect(local.getBool(LinuxWindowService.hideTitleBarKey), isFalse);
-      expect(preferences.getBool(LinuxWindowService.hideTitleBarKey), isNull);
+      expect(preferences.getBool(LinuxWindowService.hideTitleBarKey), isFalse);
       expect(calls.map((call) => call.arguments['titleBarStyle']), [
         'hidden',
         'normal',

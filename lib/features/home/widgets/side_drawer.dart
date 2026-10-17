@@ -1,30 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform, listEquals;
-import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
 import '../../../icons/lucide_adapter.dart';
 import 'package:provider/provider.dart';
 import '../../../core/services/chat/chat_service.dart';
 import '../../../core/services/api/chat_api_service.dart';
 import '../../../core/services/logging/flutter_logger.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/providers/backup_reminder_provider.dart';
 import '../../../core/models/chat_item.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../settings/pages/settings_page.dart';
-import '../../translate/pages/translate_page.dart';
-import '../../backup/pages/backup_page.dart';
 import '../../../core/providers/assistant_provider.dart';
-import '../../../core/providers/update_provider.dart';
+import '../../settings/pages/account_profile_page.dart';
 import '../../../core/models/assistant.dart';
 import '../../chat/pages/chat_history_page.dart';
 import '../../../desktop/chat_history_dialog.dart';
-import 'package:flutter/services.dart';
 import 'dart:io' show File;
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/widgets/snackbar.dart';
@@ -45,7 +38,6 @@ import '../../../theme/app_font_weights.dart';
 import '../../../core/providers/tag_provider.dart';
 import '../../assistant/widgets/assistant_select_sheet.dart';
 import '../../../desktop/hotkeys/sidebar_tab_bus.dart';
-import '../../../desktop/desktop_settings_navigation_bus.dart';
 import 'dart:async';
 import '../../../features/search/services/global_session_search_service.dart';
 import '../controllers/chat_actions.dart';
@@ -1474,6 +1466,10 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
               assistantId) {
         continue;
       }
+      // Never show temporary conversations in the sidebar history
+      if (chatService.isTemporaryConversation(c.id)) {
+        continue;
+      }
       final title = c.title;
       if (q.isNotEmpty && !title.toLowerCase().contains(q)) continue;
       final item = ChatItem(
@@ -1525,113 +1521,12 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
     return rows;
   }
 
-  void _openBackupSettings() {
-    Haptics.light();
-    if (_isDesktop) {
-      DesktopSettingsNavigationBus.instance.openBackup();
-      return;
-    }
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const BackupPage()));
-  }
-
   Widget _buildBackupReminderBanner(
     BuildContext context,
     Color textBase, {
     required bool topicsOnly,
   }) {
-    if (widget.globalSearchMode || topicsOnly) return const SizedBox.shrink();
-    final reminder = context.watch<BackupReminderProvider>();
-    if (!reminder.loaded || !reminder.shouldShowReminder) {
-      return const SizedBox.shrink();
-    }
-
-    final l10n = AppLocalizations.of(context)!;
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark
-        ? cs.primary.withValues(alpha: 0.18)
-        : cs.primary.withValues(alpha: 0.10);
-    final border = cs.primary.withValues(alpha: isDark ? 0.35 : 0.22);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Semantics(
-        button: true,
-        label: l10n.backupReminderSidebarTitle,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(color: border, width: 0.6),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: IosCardPress(
-            baseColor: bg,
-            borderRadius: BorderRadius.circular(14),
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-            onTap: _openBackupSettings,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Lucide.databaseBackup, size: 20, color: cs.primary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        l10n.backupReminderSidebarTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: _isDesktop ? 13.5 : 14.5,
-                          fontWeight: AppFontWeights.emphasis,
-                          color: textBase.withValues(alpha: 0.92),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        l10n.backupReminderSidebarSubtitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: _isDesktop ? 12 : 12.5,
-                          height: 1.25,
-                          color: textBase.withValues(alpha: 0.68),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        l10n.backupReminderSidebarAction,
-                        style: TextStyle(
-                          fontSize: _isDesktop ? 12.5 : 13,
-                          fontWeight: AppFontWeights.emphasis,
-                          color: cs.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Tooltip(
-                  message: l10n.backupReminderSnoozeTooltip,
-                  child: IosIconButton(
-                    icon: Lucide.X,
-                    size: 16,
-                    color: textBase.withValues(alpha: 0.62),
-                    padding: const EdgeInsets.all(6),
-                    semanticLabel: l10n.backupReminderSnoozeTooltip,
-                    onTap: () => context
-                        .read<BackupReminderProvider>()
-                        .snoozeForSession(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   @override
@@ -2834,74 +2729,97 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
                                 children: [
                                   Row(
                                     children: [
-                                      const SizedBox(width: 6),
-                                      // 用户头像（可点击更换）—移除水波纹
-                                      GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onTap: () => _editAvatar(context),
-                                        child: avatarWidget(
-                                          widget.userName,
-                                          context.watch<UserProvider>(),
-                                          size: 40,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 20),
-                                      // 用户名称（可点击编辑，垂直居中）
+                                      const SizedBox(width: 4),
                                       Expanded(
                                         child: IosCardPress(
                                           borderRadius: BorderRadius.circular(
-                                            6,
+                                            12,
                                           ),
                                           baseColor: Colors.transparent,
-                                          onTap: () => _editUserName(context),
+                                          onTap: () {
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    const AccountProfilePage(),
+                                              ),
+                                            );
+                                          },
                                           padding: const EdgeInsets.symmetric(
-                                            horizontal: 0,
+                                            horizontal: 6,
+                                            vertical: 4,
                                           ),
-                                          child: SizedBox(
-                                            height: 45,
-                                            child: Align(
-                                              alignment: Alignment.centerLeft,
-                                              child: Text(
+                                          child: Row(
+                                            children: [
+                                              avatarWidget(
                                                 widget.userName,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: _isDesktop
-                                                      ? 14
-                                                      : 16,
-                                                  fontWeight:
-                                                      AppFontWeights.emphasis,
-                                                  color: textBase,
+                                                context.watch<UserProvider>(),
+                                                size: 40,
+                                              ),
+                                              const SizedBox(width: 14),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    Text(
+                                                      context
+                                                              .watch<
+                                                                UserProvider
+                                                              >()
+                                                              .name
+                                                              .isNotEmpty
+                                                          ? context
+                                                                .watch<
+                                                                  UserProvider
+                                                                >()
+                                                                .name
+                                                          : widget.userName,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: _isDesktop
+                                                            ? 14
+                                                            : 15.5,
+                                                        fontWeight:
+                                                            AppFontWeights
+                                                                .emphasis,
+                                                        color: textBase,
+                                                      ),
+                                                    ),
+                                                    if (context
+                                                        .watch<UserProvider>()
+                                                        .roleOrBio
+                                                        .isNotEmpty) ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        context
+                                                            .watch<
+                                                              UserProvider
+                                                            >()
+                                                            .roleOrBio,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: textBase
+                                                              .withValues(
+                                                                alpha: 0.55,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
                                                 ),
                                               ),
-                                            ),
+                                            ],
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      // 翻译按钮（圆形，无水波纹）
-                                      SizedBox(
-                                        width: 45,
-                                        height: 45,
-                                        child: Center(
-                                          child: IosIconButton(
-                                            size: 22,
-                                            color: textBase,
-                                            icon: Lucide.Languages,
-                                            padding: const EdgeInsets.all(10),
-                                            onTap: () {
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      const TranslatePage(),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      // 设置按钮（圆形，无水波纹）
+                                      const SizedBox(width: 6),
                                       SizedBox(
                                         width: 45,
                                         height: 45,
@@ -3105,763 +3023,6 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
     );
   }
 
-  Future<void> _editAvatar(BuildContext context) async {
-    final l10n = AppLocalizations.of(context)!;
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.overlaySurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        final maxH = MediaQuery.sizeOf(ctx).height * 0.8;
-        Widget row(String text, VoidCallback onTap) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: SizedBox(
-              height: 48,
-              child: IosCardPress(
-                borderRadius: BorderRadius.circular(14),
-                baseColor: sheetTileColor(ctx),
-                duration: const Duration(milliseconds: 260),
-                onTap: () async {
-                  Haptics.light();
-                  Navigator.of(ctx).pop();
-                  await Future<void>.delayed(const Duration(milliseconds: 10));
-                  onTap();
-                },
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    text,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: AppFontWeights.medium,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-
-        return SafeArea(
-          top: false,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maxH),
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: cs.onSurface.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    row(l10n.sideDrawerChooseImage, () async {
-                      await _pickLocalImage(context);
-                    }),
-                    row(l10n.sideDrawerChooseEmoji, () async {
-                      final userProvider = context.read<UserProvider>();
-                      final emoji = await _pickEmoji(context);
-                      if (!context.mounted || emoji == null) return;
-                      await userProvider.setAvatarEmoji(emoji);
-                    }),
-                    row(l10n.sideDrawerEnterLink, () async {
-                      await _inputAvatarUrl(context);
-                    }),
-                    row(l10n.sideDrawerImportFromQQ, () async {
-                      await _inputQQAvatar(context);
-                    }),
-                    row(l10n.sideDrawerReset, () async {
-                      await context.read<UserProvider>().resetAvatar();
-                    }),
-                    const SizedBox(height: 4),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<String?> _pickEmoji(BuildContext context) async {
-    final l10n = AppLocalizations.of(context)!;
-    // Provide input to allow any emoji via system emoji keyboard,
-    // plus a large set of quick picks for convenience.
-    final controller = TextEditingController();
-    String value = '';
-    bool validGrapheme(String s) {
-      final trimmed = s.characters.take(1).toString().trim();
-      return trimmed.isNotEmpty && trimmed == s.trim();
-    }
-
-    final List<String> quick = const [
-      '😀',
-      '😁',
-      '😂',
-      '🤣',
-      '😃',
-      '😄',
-      '😅',
-      '😊',
-      '😍',
-      '😘',
-      '😗',
-      '😙',
-      '😚',
-      '🙂',
-      '🤗',
-      '🤩',
-      '🫶',
-      '🤝',
-      '👍',
-      '👎',
-      '👋',
-      '🙏',
-      '💪',
-      '🔥',
-      '✨',
-      '🌟',
-      '💡',
-      '🎉',
-      '🎊',
-      '🎈',
-      '🌈',
-      '☀️',
-      '🌙',
-      '⭐',
-      '⚡',
-      '☁️',
-      '❄️',
-      '🌧️',
-      '🍎',
-      '🍊',
-      '🍋',
-      '🍉',
-      '🍇',
-      '🍓',
-      '🍒',
-      '🍑',
-      '🥭',
-      '🍍',
-      '🥝',
-      '🍅',
-      '🥕',
-      '🌽',
-      '🍞',
-      '🧀',
-      '🍔',
-      '🍟',
-      '🍕',
-      '🌮',
-      '🌯',
-      '🍣',
-      '🍜',
-      '🍰',
-      '🍪',
-      '🍩',
-      '🍫',
-      '🍻',
-      '☕',
-      '🧋',
-      '🥤',
-      '⚽',
-      '🏀',
-      '🏈',
-      '🎾',
-      '🏐',
-      '🎮',
-      '🎧',
-      '🎸',
-      '🎹',
-      '🎺',
-      '📚',
-      '✏️',
-      '💼',
-      '💻',
-      '🖥️',
-      '📱',
-      '🛩️',
-      '✈️',
-      '🚗',
-      '🚕',
-      '🚙',
-      '🚌',
-      '🚀',
-      '🛰️',
-      '🧠',
-      '🫀',
-      '💊',
-      '🩺',
-      '🐶',
-      '🐱',
-      '🐭',
-      '🐹',
-      '🐰',
-      '🦊',
-      '🐻',
-      '🐼',
-      '🐨',
-      '🐯',
-      '🦁',
-      '🐮',
-      '🐷',
-      '🐸',
-      '🐵',
-    ];
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            // Revert to non-scrollable dialog but cap grid height
-            // based on available height when keyboard is visible.
-            final size = MediaQuery.sizeOf(ctx);
-            final viewInsets = MediaQuery.viewInsetsOf(ctx);
-            final avail = size.height - viewInsets.bottom;
-            final double gridHeight = (avail * 0.28).clamp(120.0, 220.0);
-            return AlertDialog(
-              scrollable: true,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              backgroundColor: context.overlaySurface,
-              title: Text(l10n.sideDrawerEmojiDialogTitle),
-              content: SizedBox(
-                width: 360,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        color: cs.primary.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: EmojiText(
-                        value.isEmpty
-                            ? '🙂'
-                            : value.characters.take(1).toString(),
-                        fontSize: 40,
-                        optimizeEmojiAlign: true,
-                        nudge: Offset
-                            .zero, // mobile/desktop picker preview: no extra nudge
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: controller,
-                      autofocus: true,
-                      onChanged: (v) => setLocal(() => value = v),
-                      onSubmitted: (_) {
-                        if (validGrapheme(value)) {
-                          Navigator.of(
-                            ctx,
-                          ).pop(value.characters.take(1).toString());
-                        }
-                      },
-                      decoration: InputDecoration(
-                        hintText: l10n.sideDrawerEmojiDialogHint,
-                        filled: true,
-                        fillColor: ctx.appColors.surfaceFill,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.transparent),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.transparent),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: cs.primary.withValues(alpha: 0.4),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: gridHeight,
-                      child: GridView.builder(
-                        shrinkWrap: true,
-                        padding: EdgeInsets.zero,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 8,
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
-                            ),
-                        itemCount: quick.length,
-                        itemBuilder: (c, i) {
-                          final e = quick[i];
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () => Navigator.of(ctx).pop(e),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: cs.primary.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              alignment: Alignment.center,
-                              child: EmojiText(
-                                e,
-                                fontSize: 20,
-                                optimizeEmojiAlign: true,
-                                nudge:
-                                    Offset.zero, // picker grid: no extra nudge
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text(l10n.sideDrawerCancel),
-                ),
-                TextButton(
-                  onPressed: validGrapheme(value)
-                      ? () => Navigator.of(
-                          ctx,
-                        ).pop(value.characters.take(1).toString())
-                      : null,
-                  child: Text(
-                    l10n.sideDrawerSave,
-                    style: TextStyle(
-                      color: validGrapheme(value)
-                          ? cs.primary
-                          : cs.onSurface.withValues(alpha: 0.38),
-                      fontWeight: AppFontWeights.semibold,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _inputAvatarUrl(BuildContext context) async {
-    final l10n = AppLocalizations.of(context)!;
-    final userProvider = context.read<UserProvider>();
-    final controller = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        bool valid(String s) =>
-            s.trim().startsWith('http://') || s.trim().startsWith('https://');
-        String value = '';
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              backgroundColor: context.overlaySurface,
-              title: Text(l10n.sideDrawerImageUrlDialogTitle),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: l10n.sideDrawerImageUrlDialogHint,
-                  filled: true,
-                  fillColor: ctx.appColors.surfaceFill,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.transparent),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.transparent),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: cs.primary.withValues(alpha: 0.4),
-                    ),
-                  ),
-                ),
-                onChanged: (v) => setLocal(() => value = v),
-                onSubmitted: (_) {
-                  if (valid(value)) Navigator.of(ctx).pop(true);
-                },
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: Text(l10n.sideDrawerCancel),
-                ),
-                TextButton(
-                  onPressed: valid(value)
-                      ? () => Navigator.of(ctx).pop(true)
-                      : null,
-                  child: Text(
-                    l10n.sideDrawerSave,
-                    style: TextStyle(
-                      color: valid(value)
-                          ? cs.primary
-                          : cs.onSurface.withValues(alpha: 0.38),
-                      fontWeight: AppFontWeights.semibold,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    if (!context.mounted || ok != true) return;
-    final url = controller.text.trim();
-    if (url.isNotEmpty) {
-      await userProvider.setAvatarUrl(url);
-    }
-  }
-
-  Future<void> _inputQQAvatar(BuildContext context) async {
-    final l10n = AppLocalizations.of(context)!;
-    final userProvider = context.read<UserProvider>();
-    final controller = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        String value = '';
-        bool valid(String s) => RegExp(r'^[0-9]{5,12}$').hasMatch(s.trim());
-        String randomQQ() {
-          final lengths = <int>[5, 6, 7, 8, 9, 10, 11];
-          final weights = <int>[1, 20, 80, 100, 500, 5000, 80];
-          final total = weights.fold<int>(0, (a, b) => a + b);
-          final rnd = math.Random();
-          int roll = rnd.nextInt(total) + 1;
-          int chosenLen = lengths.last;
-          int acc = 0;
-          for (int i = 0; i < lengths.length; i++) {
-            acc += weights[i];
-            if (roll <= acc) {
-              chosenLen = lengths[i];
-              break;
-            }
-          }
-          final sb = StringBuffer();
-          final firstGroups = <List<int>>[
-            [1, 2],
-            [3, 4],
-            [5, 6, 7, 8],
-            [9],
-          ];
-          final firstWeights = <int>[
-            128,
-            4,
-            2,
-            1,
-          ]; // ratio only; ensures 1-2 > 3-4 > 5-8 > 9
-          final firstTotal = firstWeights.fold<int>(0, (a, b) => a + b);
-          int r2 = rnd.nextInt(firstTotal) + 1;
-          int idx = 0;
-          int a2 = 0;
-          for (int i = 0; i < firstGroups.length; i++) {
-            a2 += firstWeights[i];
-            if (r2 <= a2) {
-              idx = i;
-              break;
-            }
-          }
-          final group = firstGroups[idx];
-          sb.write(group[rnd.nextInt(group.length)]);
-          for (int i = 1; i < chosenLen; i++) {
-            sb.write(rnd.nextInt(10));
-          }
-          return sb.toString();
-        }
-
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              backgroundColor: context.overlaySurface,
-              title: Text(l10n.sideDrawerQQAvatarDialogTitle),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: l10n.sideDrawerQQAvatarInputHint,
-                  filled: true,
-                  fillColor: ctx.appColors.surfaceFill,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.transparent),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.transparent),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: cs.primary.withValues(alpha: 0.4),
-                    ),
-                  ),
-                ),
-                onChanged: (v) => setLocal(() => value = v),
-                onSubmitted: (_) {
-                  if (valid(value)) Navigator.of(ctx).pop(true);
-                },
-              ),
-              actionsAlignment: MainAxisAlignment.spaceBetween,
-              actions: [
-                TextButton(
-                  onPressed: () async {
-                    // Try multiple times until a valid avatar is fetched
-                    const int maxTries = 20;
-                    bool applied = false;
-                    for (int i = 0; i < maxTries; i++) {
-                      final qq = randomQQ();
-                      // debugPrint(qq);
-                      final url =
-                          'https://q2.qlogo.cn/headimg_dl?dst_uin=$qq&spec=100';
-                      try {
-                        final resp = await http
-                            .get(Uri.parse(url))
-                            .timeout(const Duration(seconds: 5));
-                        if (!context.mounted || !ctx.mounted) return;
-                        if (resp.statusCode == 200 &&
-                            resp.bodyBytes.isNotEmpty) {
-                          await userProvider.setAvatarUrl(url);
-                          applied = true;
-                          break;
-                        }
-                      } catch (_) {}
-                    }
-                    if (applied) {
-                      if (!ctx.mounted) return;
-                      if (Navigator.of(ctx).canPop()) {
-                        Navigator.of(ctx).pop(false);
-                      }
-                    } else {
-                      if (!context.mounted) return;
-                      showAppSnackBar(
-                        context,
-                        message: l10n.sideDrawerQQAvatarFetchFailed,
-                        type: NotificationType.error,
-                      );
-                    }
-                  },
-                  child: Text(l10n.sideDrawerRandomQQ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(false),
-                      child: Text(l10n.sideDrawerCancel),
-                    ),
-                    TextButton(
-                      onPressed: valid(value)
-                          ? () => Navigator.of(ctx).pop(true)
-                          : null,
-                      child: Text(
-                        l10n.sideDrawerSave,
-                        style: TextStyle(
-                          color: valid(value)
-                              ? cs.primary
-                              : cs.onSurface.withValues(alpha: 0.38),
-                          fontWeight: AppFontWeights.semibold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    if (!context.mounted || ok != true) return;
-    final qq = controller.text.trim();
-    if (qq.isNotEmpty) {
-      final url = 'https://q2.qlogo.cn/headimg_dl?dst_uin=$qq&spec=100';
-      await userProvider.setAvatarUrl(url);
-    }
-  }
-
-  Future<void> _pickLocalImage(BuildContext context) async {
-    if (kIsWeb) {
-      await _inputAvatarUrl(context);
-      return;
-    }
-    final userProvider = context.read<UserProvider>();
-    try {
-      final picker = ImagePicker();
-      final XFile? file = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1024,
-        imageQuality: 90,
-      );
-      if (!context.mounted) return;
-      if (file != null) {
-        await userProvider.setAvatarFilePath(file.path);
-        return;
-      }
-    } on PlatformException {
-      // Gracefully degrade when plugin channel isn't available or permission denied.
-      if (!context.mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      showAppSnackBar(
-        context,
-        message: l10n.sideDrawerGalleryOpenError,
-        type: NotificationType.error,
-      );
-      await _inputAvatarUrl(context);
-      return;
-    } catch (_) {
-      if (!context.mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      showAppSnackBar(
-        context,
-        message: l10n.sideDrawerGeneralImageError,
-        type: NotificationType.error,
-      );
-      await _inputAvatarUrl(context);
-      return;
-    }
-  }
-
-  Future<void> _editUserName(BuildContext context) async {
-    final l10n = AppLocalizations.of(context)!;
-    final userProvider = context.read<UserProvider>();
-    final initial = widget.userName;
-    final controller = TextEditingController(text: initial);
-    const maxLen = 24;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        String value = controller.text;
-        bool valid(String v) => v.trim().isNotEmpty && v.trim() != initial;
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              backgroundColor: context.overlaySurface,
-              title: Text(l10n.sideDrawerSetNicknameTitle),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    maxLength: maxLen,
-                    textInputAction: TextInputAction.done,
-                    onChanged: (v) => setLocal(() => value = v),
-                    onSubmitted: (_) {
-                      if (valid(value)) Navigator.of(ctx).pop(true);
-                    },
-                    decoration: InputDecoration(
-                      labelText: l10n.sideDrawerNicknameLabel,
-                      hintText: l10n.sideDrawerNicknameHint,
-                      filled: true,
-                      fillColor: context.appColors.surfaceFill,
-                      counterText: '',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.transparent),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.transparent),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(
-                          color: cs.primary.withValues(alpha: 0.4),
-                        ),
-                      ),
-                    ),
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: Theme.of(ctx).textTheme.bodyMedium?.color,
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      '${value.trim().length}/$maxLen',
-                      style: TextStyle(
-                        color: cs.onSurface.withValues(alpha: 0.45),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: Text(l10n.sideDrawerCancel),
-                ),
-                TextButton(
-                  onPressed: valid(value)
-                      ? () => Navigator.of(ctx).pop(true)
-                      : null,
-                  child: Text(
-                    l10n.sideDrawerSave,
-                    style: TextStyle(
-                      color: valid(value)
-                          ? cs.primary
-                          : cs.onSurface.withValues(alpha: 0.38),
-                      fontWeight: AppFontWeights.semibold,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    if (!context.mounted || ok != true) return;
-    final text = controller.text.trim();
-    if (text.isNotEmpty) {
-      await userProvider.setName(text);
-    }
-  }
-
   // Build assistants list (ungrouped + grouped by tags). When inlineMode=false (desktop tabs),
   // apply search filter on assistant names.
   Widget _buildAssistantsList(BuildContext context, {bool inlineMode = false}) {
@@ -4028,88 +3189,7 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
       );
     }
 
-    final banner = includeUpdateBanner
-        ? Builder(
-            builder: (context) {
-              final settings = context.watch<SettingsProvider>();
-              final upd = context.watch<UpdateProvider>();
-              if (!settings.showAppUpdates) return const SizedBox.shrink();
-              final info = upd.available;
-              if (upd.checking && info == null) return const SizedBox.shrink();
-              if (info == null) return const SizedBox.shrink();
-              final url = info.bestDownloadUrl();
-              if (url == null || url.isEmpty) return const SizedBox.shrink();
-              final ver = info.version;
-              final build = info.build;
-              final l10n = AppLocalizations.of(context)!;
-              final title = build != null
-                  ? l10n.sideDrawerUpdateTitleWithBuild(ver, build)
-                  : l10n.sideDrawerUpdateTitle(ver);
-              final cs2 = Theme.of(context).colorScheme;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Material(
-                  color: context.appColors.surfaceCard,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () async {
-                      final uri = Uri.parse(url);
-                      try {
-                        // ignore: deprecated_member_use
-                        await launchUrl(uri);
-                      } catch (_) {
-                        Clipboard.setData(ClipboardData(text: url));
-                        if (!context.mounted) return;
-                        showAppSnackBar(
-                          context,
-                          message: l10n.sideDrawerLinkCopied,
-                          type: NotificationType.success,
-                        );
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Lucide.BadgeInfo,
-                                size: 18,
-                                color: cs2.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  title,
-                                  style: TextStyle(
-                                    fontWeight: AppFontWeights.emphasis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if ((info.notes ?? '').trim().isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              info.notes!,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: cs2.onSurface.withValues(alpha: 0.8),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          )
-        : null;
+    const Widget? banner = null;
 
     // Light transition signature (cache plan measure 16): changes on the same
     // membership/order events as the previous id-join string without
@@ -4476,8 +3556,7 @@ class _ChatTileState extends State<_ChatTile> {
                     ),
                     if (context.select<ChatService, bool>(
                       (service) =>
-                          service.composerDrafts?.hasDraft(widget.chat.id) ??
-                          false,
+                          service.composerDrafts.hasDraft(widget.chat.id),
                     )) ...[
                       const SizedBox(width: 6),
                       Text(

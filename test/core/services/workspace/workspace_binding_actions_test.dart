@@ -1,14 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 // ignore: depend_on_referenced_packages
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
-
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/models/workspace.dart';
 import 'package:Kelivo/core/models/workspace_binding.dart';
@@ -43,7 +38,6 @@ void main() {
 
   late Directory tempDir;
   late BusinessTestHarness harness;
-  late AppDatabase database;
   late ChatService chat;
   late AssistantProvider assistants;
   late WorkspaceProvider workspaces;
@@ -58,8 +52,6 @@ void main() {
       supportDir: tempDir.path,
     );
     harness = await BusinessTestHarness.create();
-    database = AppDatabase(NativeDatabase.memory());
-    await database.customSelect('SELECT 1;').getSingle();
     await harness.preferences.setString(
       'assistants_v1',
       jsonEncode([
@@ -67,22 +59,17 @@ void main() {
         {'id': 'asst-2', 'name': 'Beta', 'defaultWorkspaceId': 'ws-keep'},
       ]),
     );
-    assistants = AssistantProvider(preferences: harness.preferences);
+    assistants = AssistantProvider();
     await assistants.loaded;
     chat = ChatService();
     await chat.init();
-    workspaces = WorkspaceProvider(
-      store: ExtensionEntityStore(database),
-      assistants: assistants,
-    );
+    workspaces = WorkspaceProvider(assistants: assistants);
     await workspaces.loaded;
   });
 
   tearDown(() async {
-    await chat.close();
-    await database.close();
+    chat.dispose();
     await harness.close();
-    await Hive.close();
     SandboxPathResolver.debugSetDirs(docsDir: null, supportDir: null);
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
@@ -177,7 +164,7 @@ void main() {
       expect(notice?.automaticallyRemembered, isFalse);
       expect(assistants.getById('asst-1')!.defaultWorkspaceId, isNull);
 
-      final reloaded = AssistantProvider(preferences: harness.preferences);
+      final reloaded = AssistantProvider();
       await reloaded.loaded;
       addTearDown(reloaded.dispose);
       expect(

@@ -34,9 +34,7 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Frosted');
     await assistants.setCurrentAssistant(id);
@@ -102,9 +100,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final settings = SettingsProvider(createBusinessTestPreferences());
     await settings.loaded;
@@ -149,9 +145,7 @@ void main() {
     tester,
   ) async {
     debugFrostedForceLiveBackdropFilter = true;
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final settings = SettingsProvider(createBusinessTestPreferences());
     await settings.loaded;
@@ -177,9 +171,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final settings = SettingsProvider(createBusinessTestPreferences());
     await settings.loaded;

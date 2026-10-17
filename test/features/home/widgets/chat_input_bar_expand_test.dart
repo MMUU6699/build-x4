@@ -34,11 +34,7 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider.value(value: settings),
-          ChangeNotifierProvider.value(
-            value: AssistantProvider(
-              preferences: createBusinessTestPreferences(),
-            ),
-          ),
+          ChangeNotifierProvider.value(value: AssistantProvider()),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,

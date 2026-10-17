@@ -45,9 +45,7 @@ void main() {
   }) {
     final settings =
         settingsProvider ?? SettingsProvider(createBusinessTestPreferences());
-    final assistants =
-        assistantProvider ??
-        AssistantProvider(preferences: createBusinessTestPreferences());
+    final assistants = assistantProvider ?? AssistantProvider();
     // In the app, HomePage resolves the chat model (conversation override ->
     // assistant -> global default) and passes it down; mirror that here.
     final chatModel = resolveChatModel(
@@ -382,9 +380,7 @@ void main() {
     final focusNode = FocusNode();
     final mediaController = ChatInputBarController();
     final settings = SettingsProvider(createBusinessTestPreferences());
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     addTearDown(controller.dispose);
     addTearDown(focusNode.dispose);
     addTearDown(settings.dispose);

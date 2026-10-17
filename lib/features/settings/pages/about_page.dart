@@ -12,7 +12,6 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/widgets/ios_switch.dart';
 import '../../../shared/widgets/qq_group_join_sheet.dart';
-import '../../../shared/widgets/snackbar.dart';
 import '../../../core/services/haptics.dart';
 import 'debug_page.dart';
 import 'log_viewer_page.dart';
@@ -32,8 +31,6 @@ class _AboutPageState extends State<AboutPage> {
   String _systemInfo = '';
   int _versionTapCount = 0;
   DateTime? _lastVersionTap;
-  int _appNameTapCount = 0;
-  DateTime? _lastAppNameTap;
 
   @override
   void initState() {
@@ -72,29 +69,7 @@ class _AboutPageState extends State<AboutPage> {
     }
   }
 
-  Future<void> _onAppNameTap() async {
-    final now = DateTime.now();
-    if (_lastAppNameTap == null ||
-        now.difference(_lastAppNameTap!) > const Duration(seconds: 2)) {
-      _appNameTapCount = 0;
-    }
-    _lastAppNameTap = now;
-    _appNameTapCount++;
-    if (_appNameTapCount < 7) return;
-
-    _appNameTapCount = 0;
-    Haptics.medium();
-    final added = await context.read<SettingsProvider>().unlockKelivoSearch();
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context)!;
-    showAppSnackBar(
-      context,
-      message: added
-          ? l10n.aboutPageKelivoSearchUnlocked
-          : l10n.aboutPageKelivoSearchAlreadyUnlocked,
-      type: NotificationType.success,
-    );
-  }
+  Future<void> _onAppNameTap() async {}
 
   void _onVersionTap() {
     final now = DateTime.now();

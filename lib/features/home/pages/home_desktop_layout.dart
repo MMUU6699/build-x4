@@ -21,7 +21,6 @@ import '../../../core/services/chat/chat_service.dart';
 import '../../workspace/widgets/desktop_workspace_bar.dart';
 import '../../../shared/animations/widgets.dart';
 import '../../../shared/widgets/ios_tactile.dart';
-import '../../../utils/brand_assets.dart';
 import '../../../utils/sandbox_path_resolver.dart';
 import '../../../desktop/hotkeys/chat_action_bus.dart';
 import '../../../desktop/hotkeys/sidebar_tab_bus.dart';
@@ -40,8 +39,8 @@ class HomeDesktopScaffold extends StatelessWidget {
     required this.assistantPickerCloseTick,
     required this.loadingConversationIds,
     required this.title,
-    required this.providerName,
-    required this.modelDisplay,
+    this.providerName,
+    this.modelDisplay,
     // Sidebar state
     required this.tabletSidebarOpen,
     required this.rightSidebarOpen,
@@ -56,7 +55,7 @@ class HomeDesktopScaffold extends StatelessWidget {
     required this.onNewConversation,
     required this.onCreateNewConversation,
     required this.onToggleTemporaryConversation,
-    required this.onSelectModel,
+    this.onSelectModel,
     required this.canToggleTemporaryConversation,
     required this.temporaryConversationEnabled,
     required this.globalSearchMode,
@@ -94,7 +93,7 @@ class HomeDesktopScaffold extends StatelessWidget {
   final VoidCallback onNewConversation;
   final Future<void> Function() onCreateNewConversation;
   final Future<void> Function() onToggleTemporaryConversation;
-  final VoidCallback onSelectModel;
+  final VoidCallback? onSelectModel;
   final bool canToggleTemporaryConversation;
   final bool temporaryConversationEnabled;
   final bool globalSearchMode;
@@ -391,100 +390,12 @@ class HomeDesktopScaffold extends StatelessWidget {
   }
 
   Widget _buildTitle(BuildContext context, ColorScheme cs) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final useNewAssistantAvatarUx = context
         .watch<SettingsProvider>()
         .useNewAssistantAvatarUx;
     final currentAssistant = context
         .watch<AssistantProvider>()
         .currentAssistant;
-    final String? brandAsset =
-        (modelDisplay != null
-            ? BrandAssets.assetForName(modelDisplay!)
-            : null) ??
-        (providerName != null ? BrandAssets.assetForName(providerName!) : null);
-
-    Widget? capsule;
-    String? capsuleLabel;
-
-    if (providerName != null && modelDisplay != null) {
-      final showProv = context
-          .watch<SettingsProvider>()
-          .showProviderInModelCapsule;
-      capsuleLabel = showProv
-          ? '$modelDisplay | $providerName'
-          : '$modelDisplay';
-
-      final Widget brandIcon = AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
-        transitionBuilder: (child, anim) => FadeTransition(
-          opacity: anim,
-          child: ScaleTransition(scale: anim, child: child),
-        ),
-        child: (brandAsset != null)
-            ? (brandAsset.endsWith('.svg')
-                  ? SvgPicture.asset(
-                      brandAsset,
-                      width: 16,
-                      height: 16,
-                      key: ValueKey('brand:$brandAsset'),
-                      colorFilter:
-                          isDark && BrandAssets.assetNeedsDarkInvert(brandAsset)
-                          ? ColorFilter.mode(cs.onSurface, BlendMode.srcIn)
-                          : null,
-                    )
-                  : Image.asset(
-                      brandAsset,
-                      width: 16,
-                      height: 16,
-                      key: ValueKey('brand:$brandAsset'),
-                    ))
-            : Icon(
-                Lucide.Boxes,
-                size: 16,
-                color: cs.onSurface.withValues(alpha: 0.7),
-                key: const ValueKey('brand:default'),
-              ),
-      );
-
-      capsule = IosCardPress(
-        borderRadius: BorderRadius.circular(20),
-        baseColor: Colors.transparent,
-        pressedBlendStrength: isDark ? 0.18 : 0.12,
-        padding: EdgeInsets.zero,
-        onTap: onSelectModel,
-        child: AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                brandIcon,
-                const SizedBox(width: 6),
-                Flexible(
-                  child: AnimatedTextSwap(
-                    text: capsuleLabel,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.1,
-                      color: cs.onSurface.withValues(
-                        alpha: isDark ? 0.92 : 0.9,
-                      ),
-                      fontWeight: AppFontWeights.medium,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
 
     final row = Row(
       mainAxisSize: MainAxisSize.max,
@@ -511,33 +422,6 @@ class HomeDesktopScaffold extends StatelessWidget {
             ),
           ),
         ),
-        if (capsule != null) ...[
-          const SizedBox(width: 8),
-          Flexible(
-            fit: FlexFit.loose,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0.06, 0),
-                      end: Offset.zero,
-                    ).animate(anim),
-                    child: child,
-                  ),
-                ),
-                child: KeyedSubtree(
-                  key: ValueKey('cap:${capsuleLabel ?? ''}'),
-                  child: capsule,
-                ),
-              ),
-            ),
-          ),
-        ],
       ],
     );
 
@@ -555,10 +439,7 @@ class HomeDesktopScaffold extends StatelessWidget {
             child: child,
           ),
         ),
-        child: KeyedSubtree(
-          key: ValueKey('hdr:$title|${capsuleLabel ?? ''}'),
-          child: row,
-        ),
+        child: KeyedSubtree(key: ValueKey('hdr:$title'), child: row),
       ),
     );
   }
@@ -809,129 +690,7 @@ class DesktopScrollNavigationButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showSetting = context.watch<SettingsProvider>().showMessageNavButtons;
-    if (!showSetting || !hasMessages) return const SizedBox.shrink();
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bottomOffset = inputBarHeight + 12;
-
-    return Stack(
-      children: [
-        // Scroll to bottom button
-        Align(
-          alignment: Alignment.bottomRight,
-          child: SafeArea(
-            top: false,
-            bottom: false,
-            child: IgnorePointer(
-              ignoring: !showJumpToBottom,
-              child: AnimatedScale(
-                scale: showJumpToBottom ? 1.0 : 0.9,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  opacity: showJumpToBottom ? 1 : 0,
-                  child: Padding(
-                    padding: EdgeInsets.only(right: 16, bottom: bottomOffset),
-                    child: _DesktopScrollButton(
-                      isDark: isDark,
-                      icon: Lucide.ChevronDown,
-                      onTap: onScrollToBottom,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        // Scroll to previous message button
-        Align(
-          alignment: Alignment.bottomRight,
-          child: SafeArea(
-            top: false,
-            bottom: false,
-            child: IgnorePointer(
-              ignoring: !showJumpToBottom,
-              child: AnimatedScale(
-                scale: showJumpToBottom ? 1.0 : 0.9,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  opacity: showJumpToBottom ? 1 : 0,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: 16,
-                      bottom: bottomOffset + 52,
-                    ),
-                    child: _DesktopScrollButton(
-                      isDark: isDark,
-                      icon: Lucide.ChevronUp,
-                      onTap: onScrollToPreviousQuestion,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DesktopScrollButton extends StatelessWidget {
-  const _DesktopScrollButton({
-    required this.isDark,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final bool isDark;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ClipOval(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isDark
-                ? cs.onSurface.withValues(alpha: 0.06)
-                : cs.surface.withValues(alpha: 0.07),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isDark
-                  ? cs.onSurface.withValues(alpha: 0.10)
-                  : cs.outline.withValues(alpha: 0.20),
-              width: 1,
-            ),
-          ),
-          child: Material(
-            type: MaterialType.transparency,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Icon(
-                  icon,
-                  size: 18,
-                  color: cs.onSurface.withValues(alpha: isDark ? 1.0 : 0.87),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 

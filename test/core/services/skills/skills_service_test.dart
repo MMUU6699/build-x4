@@ -4,13 +4,12 @@ import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:Kelivo/core/database/app_database.dart';
 import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/models/skill_record.dart';
@@ -26,7 +25,7 @@ description: Extract text and tables from PDF files with pdfplumber.
 ''';
 
 class _PausingSkillStore extends ExtensionEntityStore {
-  _PausingSkillStore(super.database);
+  _PausingSkillStore();
 
   Completer<void>? pauseNextRead;
   Completer<void>? readStarted;
@@ -50,16 +49,14 @@ class _PausingSkillStore extends ExtensionEntityStore {
 }
 
 void main() {
-  late AppDatabase database;
   late _PausingSkillStore store;
   late Directory tmp;
   late Directory skillsDir;
   late SkillsService service;
 
   setUp(() async {
-    database = AppDatabase(NativeDatabase.memory());
-    store = _PausingSkillStore(database);
-    await database.customSelect('SELECT 1;').getSingle();
+    SharedPreferences.setMockInitialValues({});
+    store = _PausingSkillStore();
     tmp = await Directory.systemTemp.createTemp('kelivo_skills_');
     skillsDir = Directory(p.join(tmp.path, 'skills'));
     service = SkillsService(store: store, skillsDirectory: skillsDir);
@@ -68,7 +65,6 @@ void main() {
 
   tearDown(() async {
     service.dispose();
-    await database.close();
     if (await tmp.exists()) await tmp.delete(recursive: true);
   });
 

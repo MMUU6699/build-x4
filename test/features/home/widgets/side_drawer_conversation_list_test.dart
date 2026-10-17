@@ -5,7 +5,6 @@ import "../../../support/business_test_harness.dart";
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/providers/update_provider.dart';
-import 'package:Kelivo/core/providers/backup_reminder_provider.dart';
 import 'package:Kelivo/core/providers/tag_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
 import 'package:Kelivo/core/models/conversation.dart';
@@ -15,10 +14,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 // ignore: depend_on_referenced_packages
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:Kelivo/core/services/preferences/app_preferences.dart';
 
 class _FakePathProviderPlatform extends PathProviderPlatform {
   _FakePathProviderPlatform(this.path);
@@ -91,14 +91,20 @@ class _TestChatService extends ChatService {
     super.notifyListeners();
   }
 
+  bool isConversationFullyCached(String conversationId) =>
+      getMessages(conversationId).isNotEmpty;
+
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
     String? beforeRevisionId,
     String? afterRevisionId,
     String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    int? initialMessageMax,
+    int? initialMessageMin,
+    int? initialTextBudget,
+    int? limit,
   }) {
     timelineCalls.add(conversationId);
     return super.loadTimelinePage(
@@ -107,6 +113,9 @@ class _TestChatService extends ChatService {
       afterRevisionId: afterRevisionId,
       aroundRevisionId: aroundRevisionId,
       fromStart: fromStart,
+      initialMessageMax: initialMessageMax,
+      initialMessageMin: initialMessageMin,
+      initialTextBudget: initialTextBudget,
       limit: limit,
     );
   }
@@ -126,14 +135,20 @@ void main() {
     SideDrawer.debugConversationListBuildCount = 0;
     SideDrawer.debugSidebarRowsComputeCount = 0;
     SideDrawer.debugRequestConversationListHostRebuild = null;
+    SharedPreferences.setMockInitialValues({});
+    ChatService.resetSharedStorageForTesting();
+    AppPreferences.resetForTesting();
   });
 
   tearDown(() async {
+    ChatService.resetSharedStorageForTesting();
+    AppPreferences.resetForTesting();
     for (final service in services) {
-      await service.close();
+      try {
+        service.dispose();
+      } catch (_) {}
     }
     services.clear();
-    await Hive.close();
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
@@ -176,8 +191,6 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final settingsPrefs = createBusinessTestPreferences();
-    final assistantPrefs = createBusinessTestPreferences();
-    final backupPrefs = createBusinessTestPreferences();
     final tagPrefs = createBusinessTestPreferences();
     final settings = SettingsProvider(settingsPrefs);
     Widget materialFor(Locale currentLocale) {
@@ -211,12 +224,7 @@ void main() {
               value: assistantProvider,
             )
           else
-            ChangeNotifierProvider(
-              create: (_) => AssistantProvider(preferences: assistantPrefs),
-            ),
-          ChangeNotifierProvider(
-            create: (_) => BackupReminderProvider(preferences: backupPrefs),
-          ),
+            ChangeNotifierProvider(create: (_) => AssistantProvider()),
           ChangeNotifierProvider(
             create: (_) => TagProvider(preferences: tagPrefs),
           ),
@@ -293,9 +301,7 @@ void main() {
           title: 'Orphaned topic',
           assistantId: 'missing-assistant',
         );
-        assistants = AssistantProvider(
-          preferences: createBusinessTestPreferences(),
-        );
+        assistants = AssistantProvider();
         await assistants.loaded;
         first = await assistants.addAssistant(name: 'First');
         second = await assistants.addAssistant(name: 'Second');
@@ -340,7 +346,7 @@ void main() {
       final originalAssistants = assistants;
       await tester.runAsync(() async {
         assistants = AssistantProvider(
-          preferences: originalAssistants.preferences,
+          initialAssistants: originalAssistants.assistants,
         );
         await assistants.loaded;
       });
@@ -479,7 +485,7 @@ void main() {
         // The most recently created conversation becomes the current one, so
         // Alpha is a non-current hover target.
         await service.createConversation(title: 'Beta');
-        await service.close();
+        service.dispose();
         service = createService();
         await service.init();
       });

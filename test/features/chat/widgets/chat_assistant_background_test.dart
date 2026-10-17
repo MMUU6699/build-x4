@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/features/chat/widgets/chat_assistant_background.dart';
@@ -51,15 +51,15 @@ void main() {
             ),
           );
 
-          final preferences = createBusinessTestPreferences();
-          await preferences.load();
-          await preferences.setString(
-            'assistants_v1',
-            jsonEncode([
-              {'id': 'wallpaper', 'name': 'Wallpaper', 'background': file.path},
-            ]),
+          final assistants = AssistantProvider(
+            initialAssistants: [
+              Assistant(
+                id: 'wallpaper',
+                name: 'Wallpaper',
+                background: file.path,
+              ),
+            ],
           );
-          final assistants = AssistantProvider(preferences: preferences);
           await assistants.loaded;
           final settings = SettingsProvider(createBusinessTestPreferences());
           await settings.loaded;

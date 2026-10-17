@@ -1,7 +1,5 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 // ignore: depend_on_referenced_packages
@@ -9,7 +7,6 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
-import 'package:Kelivo/core/database/app_database.dart';
 import 'package:Kelivo/core/database/chat_database_repository.dart';
 import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
@@ -47,7 +44,6 @@ class _FakePathProviderPlatform extends PathProviderPlatform {
 }
 
 class _FakeChatService extends ChatService {
-  @override
   List<Map<String, dynamic>> getToolEvents(String assistantMessageId) =>
       const [];
 }
@@ -307,7 +303,6 @@ void main() {
   });
 
   group('a conversation that changes provider', () {
-    late AppDatabase database;
     late ChatDatabaseRepository repo;
     late ChatService chatService;
     late SettingsProvider settings;
@@ -319,17 +314,10 @@ void main() {
     setUp(() async {
       TestWidgetsFlutterBinding.ensureInitialized();
       SharedPreferences.setMockInitialValues({});
-      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
       previousPathProvider = PathProviderPlatform.instance;
       PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
-      database = AppDatabase(
-        NativeDatabase.memory(
-          setup: (raw) => raw.execute('PRAGMA foreign_keys = ON;'),
-        ),
-      );
-      repo = ChatDatabaseRepository(database);
-      await repo.ensureReady();
-      chatService = ChatService(existingRepository: repo);
+      repo = ChatDatabaseRepository();
+      chatService = ChatService();
       await chatService.init();
       settings = SettingsProvider(createBusinessTestPreferences());
       await settings.loaded;
@@ -352,8 +340,7 @@ void main() {
 
     tearDown(() async {
       PathProviderPlatform.instance = previousPathProvider;
-      await chatService.close();
-      await database.close();
+      chatService.dispose();
     });
 
     Future<String> replay({

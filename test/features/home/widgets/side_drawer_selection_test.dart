@@ -5,9 +5,9 @@ import "../../../support/business_test_harness.dart";
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/providers/update_provider.dart';
-import 'package:Kelivo/core/providers/backup_reminder_provider.dart';
 import 'package:Kelivo/core/providers/tag_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
+import 'package:Kelivo/core/services/preferences/app_preferences.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/features/home/widgets/side_drawer.dart';
 import 'package:Kelivo/features/home/widgets/sidebar_selection_bars.dart';
@@ -16,7 +16,6 @@ import 'package:Kelivo/shared/widgets/snackbar.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 // ignore: depend_on_referenced_packages
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:provider/provider.dart';
@@ -90,13 +89,16 @@ class _TestChatService extends ChatService {
   }
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
     String? beforeRevisionId,
     String? afterRevisionId,
     String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    int? initialMessageMax,
+    int? initialMessageMin,
+    int? initialTextBudget,
+    int? limit,
   }) {
     timelineCalls.add(conversationId);
     return super.loadTimelinePage(
@@ -105,6 +107,9 @@ class _TestChatService extends ChatService {
       afterRevisionId: afterRevisionId,
       aroundRevisionId: aroundRevisionId,
       fromStart: fromStart,
+      initialMessageMax: initialMessageMax,
+      initialMessageMin: initialMessageMin,
+      initialTextBudget: initialTextBudget,
       limit: limit,
     );
   }
@@ -125,16 +130,19 @@ void main() {
     SideDrawer.debugSidebarRowsComputeCount = 0;
     SideDrawer.debugRequestConversationListHostRebuild = null;
     SideDrawer.debugEnterSelectionMode = null;
+    ChatService.resetSharedStorageForTesting();
+    AppPreferences.resetForTesting();
     AppSnackBarManager().dismissAll();
   });
 
   tearDown(() async {
+    ChatService.resetSharedStorageForTesting();
+    AppPreferences.resetForTesting();
     AppSnackBarManager().dismissAll();
     for (final service in services) {
-      await service.close();
+      service.dispose();
     }
     services.clear();
-    await Hive.close();
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
@@ -175,8 +183,6 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final settingsPrefs = createBusinessTestPreferences();
-    final assistantPrefs = createBusinessTestPreferences();
-    final backupPrefs = createBusinessTestPreferences();
     final tagPrefs = createBusinessTestPreferences();
     final settings = SettingsProvider(settingsPrefs);
     Widget materialFor(Locale currentLocale) {
@@ -205,12 +211,7 @@ void main() {
         providers: [
           ChangeNotifierProvider<ChatService>.value(value: service),
           ChangeNotifierProvider<SettingsProvider>.value(value: settings),
-          ChangeNotifierProvider(
-            create: (_) => AssistantProvider(preferences: assistantPrefs),
-          ),
-          ChangeNotifierProvider(
-            create: (_) => BackupReminderProvider(preferences: backupPrefs),
-          ),
+          ChangeNotifierProvider(create: (_) => AssistantProvider()),
           ChangeNotifierProvider(
             create: (_) => TagProvider(preferences: tagPrefs),
           ),

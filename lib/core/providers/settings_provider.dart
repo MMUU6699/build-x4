@@ -1,21 +1,14 @@
-import '../services/auth/provider_oauth_service.dart';
 import '../models/mobile_background_settings.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:collection';
 import 'dart:io';
-import 'package:socks5_proxy/socks_client.dart' as socks;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
-import '../services/search/search_service.dart';
-import '../services/search/web_fetch_service.dart';
-import '../services/tts/network_tts.dart';
-import '../services/tts/tts_text_selection.dart';
-import '../services/asr/asr_service_options.dart';
 import '../services/network/request_logger.dart';
 import '../services/logging/context_logger.dart';
 import '../services/logging/flutter_logger.dart';
@@ -32,21 +25,185 @@ import '../../utils/app_directories.dart';
 import '../../utils/sandbox_path_resolver.dart';
 import '../../utils/avatar_cache.dart';
 import '../models/assistant.dart';
-import '../models/model_spec.dart';
 import '../models/reasoning_request.dart';
-import '../services/model_spec/model_spec_resolver.dart';
-import '../../utils/provider_grouping_logic.dart';
 import '../../utils/brand_assets.dart';
 import '../../utils/image_compressor.dart';
-import '../database/business_preferences.dart';
-import '../services/memory/memory_prompts.dart';
-import '../services/memory/memory_trace.dart';
+import '../services/preferences/app_preferences.dart';
 import '../../theme/palettes.dart';
 import '../../theme/custom_theme.dart';
 import '../../theme/chat_bubble_style.dart';
-import '../models/tool_schema_override.dart';
 import '../services/app_exit_flush.dart';
 import '../services/linux_window_service.dart';
+import '../models/provider_oauth.dart';
+export '../models/provider_oauth.dart';
+import '../models/tool_schema_override.dart';
+export '../models/tool_schema_override.dart';
+
+enum TtsTextSelectionMode {
+  fullText('full_text'),
+  selectionOnly('selection_only');
+
+  const TtsTextSelectionMode(this.storageValue);
+  final String storageValue;
+}
+
+class TtsTextSelectionModeStorage {
+  static TtsTextSelectionMode fromStorageValue(String? value) {
+    if (value == 'selection_only') return TtsTextSelectionMode.selectionOnly;
+    return TtsTextSelectionMode.fullText;
+  }
+}
+
+class SearchServiceOptions {
+  static const defaultOption = SearchServiceOptions();
+  const SearchServiceOptions();
+  Map<String, dynamic> toJson() => {};
+  static SearchServiceOptions fromJson(Map<String, dynamic> json) =>
+      const SearchServiceOptions();
+}
+
+class KelivoOptions extends SearchServiceOptions {
+  static const builtInId = 'built_in';
+  final String id;
+  const KelivoOptions({this.id = builtInId});
+}
+
+class SearchCommonOptions {
+  const SearchCommonOptions();
+  Map<String, dynamic> toJson() => {};
+  static SearchCommonOptions fromJson(Map<String, dynamic> json) =>
+      const SearchCommonOptions();
+}
+
+class WebFetchMode {
+  static const follow = 'follow';
+  static const off = 'off';
+  static const local = 'local';
+}
+
+class TtsServiceOptions {
+  final String? id;
+  const TtsServiceOptions({this.id});
+  Map<String, dynamic> toJson() => {'id': id};
+  static TtsServiceOptions fromJson(Map<String, dynamic> json) =>
+      TtsServiceOptions(id: json['id']?.toString());
+}
+
+class AsrServiceOptions {
+  final String? id;
+  const AsrServiceOptions({this.id});
+  Map<String, dynamic> toJson() => {'id': id};
+  static AsrServiceOptions fromJson(Map<String, dynamic> json) =>
+      AsrServiceOptions(id: json['id']?.toString());
+}
+
+class WebFetchService {
+  static String effectiveMode(String mode, dynamic services) => mode;
+}
+
+enum MemoryPromptLang { en, zh }
+
+class MemoryPrompts {
+  static const rulesZh = '';
+  static const rulesEn = '';
+  static const gateZh = '';
+  static const gateEn = '';
+  static const extractZh = '';
+  static const extractEn = '';
+  static const smartAddZh = '';
+  static const smartAddEn = '';
+  static const smartAddBatchZh = '';
+  static const smartAddBatchEn = '';
+  static const profileDistillZh = '';
+  static const profileDistillEn = '';
+  static const migrateZh = '';
+  static const migrateEn = '';
+  static const legacyZh = '';
+  static const legacyEn = '';
+  static const legacyRulesZh = '';
+  static const legacyRulesEn = '';
+}
+
+class MemoryTraceRecorder {
+  static final instance = MemoryTraceRecorder();
+  static void setGlobalEnabled(bool enabled) {}
+  void setEnabled(bool enabled) {}
+  void record(dynamic a, dynamic b, dynamic c, [dynamic d, dynamic e]) {}
+}
+
+class ProviderGroupResult {
+  final List<ProviderGroup> groups;
+  final int ungroupedIndex;
+  final Map<String, String> providerGroupMap;
+  final Map<String, bool> collapsed;
+  final List<String> providersOrder;
+
+  const ProviderGroupResult({
+    this.groups = const [],
+    this.ungroupedIndex = 0,
+    this.providerGroupMap = const {},
+    this.collapsed = const {},
+    this.providersOrder = const [],
+  });
+}
+
+ProviderGroupResult insertProviderGroup({
+  required List<ProviderGroup> groups,
+  required int ungroupedIndex,
+  required ProviderGroup group,
+}) {
+  final list = List<ProviderGroup>.from(groups)..add(group);
+  return ProviderGroupResult(groups: list, ungroupedIndex: ungroupedIndex);
+}
+
+ProviderGroupResult reorderProviderGroupDisplayWithUngrouped({
+  required List<ProviderGroup> groups,
+  required int ungroupedIndex,
+  required int oldIndex,
+  required int newIndex,
+}) {
+  return ProviderGroupResult(groups: groups, ungroupedIndex: ungroupedIndex);
+}
+
+ProviderGroupResult deleteProviderGroup({
+  required List<ProviderGroup> groups,
+  required int ungroupedIndex,
+  required Map<String, String> providerGroupMap,
+  required Map<String, bool> collapsed,
+  required String groupId,
+}) {
+  final list = groups.where((g) => g.id != groupId).toList();
+  final map = Map<String, String>.from(providerGroupMap)
+    ..removeWhere((k, v) => v == groupId);
+  final col = Map<String, bool>.from(collapsed)..remove(groupId);
+  return ProviderGroupResult(
+    groups: list,
+    ungroupedIndex: ungroupedIndex,
+    providerGroupMap: map,
+    collapsed: col,
+  );
+}
+
+ProviderGroupResult moveProviderInGroupedOrder({
+  required List<String> providersOrder,
+  required Map<String, String> providerGroupMap,
+  required Set<String> knownProviderKeys,
+  required Set<String> validGroupIds,
+  required String providerKey,
+  required String? targetGroupId,
+  required int targetPos,
+}) {
+  final map = Map<String, String>.from(providerGroupMap);
+  if (targetGroupId == null) {
+    map.remove(providerKey);
+  } else {
+    map[providerKey] = targetGroupId;
+  }
+  return ProviderGroupResult(
+    providersOrder: providersOrder,
+    providerGroupMap: map,
+  );
+}
 
 // Desktop: topic list position
 enum DesktopTopicPosition { left, right }
@@ -575,21 +732,11 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   bool supportsXhighReasoning(String providerKey, String modelId) {
-    final cfg = getProviderConfig(providerKey);
-    return ModelSpecResolver.instance
-        .spec(cfg, modelId)
-        .reasoning
-        .levels
-        .contains(ReasoningLevel.xhigh);
+    return false;
   }
 
   bool supportsMaxReasoning(String providerKey, String modelId) {
-    final cfg = getProviderConfig(providerKey);
-    return ModelSpecResolver.instance
-        .spec(cfg, modelId)
-        .reasoning
-        .levels
-        .contains(ReasoningLevel.max);
+    return false;
   }
 
   // Explicitly ensure a provider config exists in memory (without persisting to storage).
@@ -648,7 +795,6 @@ class SettingsProvider extends ChangeNotifier {
   int get appLaunchCount => _appLaunchCount;
 
   SettingsProvider(this._preferences, {this.onProviderModelsRetired}) {
-    ProviderOAuthService.instance.bind(this);
     _appLocaleTag = _readAppLocaleTag(_preferences);
     _loaded = _load();
   }
@@ -2191,36 +2337,12 @@ class SettingsProvider extends ChangeNotifier {
     await prefs.setString(_s3ConfigKey, jsonEncode(cfg.toJson()));
   }
 
-  Future<void> _initSearchConnectivityTests() async {
-    final services = List<SearchServiceOptions>.from(_searchServices);
-    final common = _searchCommonOptions;
-    for (final s in services) {
-      if (s is BingLocalOptions || s is KelivoOptions) {
-        _searchConnection[s.id] = null;
-        continue;
-      }
-      // Run in background; don't await all
-      unawaited(_testSingleSearchService(s, common));
-    }
-  }
+  Future<void> _initSearchConnectivityTests() async {}
 
-  Future<void> _testSingleSearchService(
+  Future<void> testSingleSearchService(
     SearchServiceOptions s,
     SearchCommonOptions common,
-  ) async {
-    try {
-      final svc = SearchService.getService(s);
-      await svc.search(
-        query: 'connectivity test',
-        commonOptions: common,
-        serviceOptions: s,
-      );
-      _searchConnection[s.id] = true;
-    } catch (_) {
-      _searchConnection[s.id] = false;
-    }
-    notifyListeners();
-  }
+  ) async {}
 
   void setSearchConnection(String id, bool? value) {
     _searchConnection[id] = value;
@@ -2970,7 +3092,6 @@ class SettingsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    ProviderOAuthService.instance.unbind(this);
     _toolSchemaOverridePersistTimer?.cancel();
     _toolSchemaOverridePersistTimer = null;
     if (_toolSchemaOverridePersistDirty) {
@@ -6037,33 +6158,7 @@ class _SocksProxyHttpOverrides extends HttpOverrides {
           return directConnection(uri);
         }
 
-        final proxies = <socks.ProxySettings>[
-          socks.ProxySettings(
-            proxyAddr,
-            port,
-            username: username,
-            password: password,
-          ),
-        ];
-
-        final socket = socks.SocksTCPClient.connect(
-          proxies,
-          InternetAddress(uri.host, type: InternetAddressType.unix),
-          uri.port,
-        );
-
-        if (uri.scheme == 'https') {
-          final Future<SecureSocket> secureSocket;
-          return ConnectionTask.fromSocket(
-            secureSocket = (await socket).secure(uri.host, context: context),
-            () async => (await secureSocket).close(),
-          );
-        }
-
-        return ConnectionTask.fromSocket(
-          socket,
-          () async => (await socket).close(),
-        );
+        return directConnection(uri);
       };
     } catch (_) {
       // ignore

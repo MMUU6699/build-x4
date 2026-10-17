@@ -3,7 +3,6 @@ import "../../../support/business_test_harness.dart";
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/tts_provider.dart';
 import 'package:Kelivo/core/providers/user_provider.dart';
 import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/home/controllers/scroll_controller.dart'
@@ -102,18 +101,8 @@ Widget _harness({
       ChangeNotifierProvider(
         create: (_) => SettingsProvider(createBusinessTestPreferences()),
       ),
-      ChangeNotifierProvider(
-        create: (_) =>
-            AssistantProvider(preferences: createBusinessTestPreferences()),
-      ),
-      ChangeNotifierProvider(
-        create: (_) =>
-            TtsProvider(preferences: createBusinessTestPreferences()),
-      ),
-      ChangeNotifierProvider(
-        create: (_) =>
-            UserProvider(preferences: createBusinessTestPreferences()),
-      ),
+      ChangeNotifierProvider(create: (_) => AssistantProvider()),
+      ChangeNotifierProvider(create: (_) => UserProvider()),
       ChangeNotifierProvider(create: (_) => AskUserInteractionService()),
       ChangeNotifierProvider(create: (_) => ToolApprovalService()),
     ],

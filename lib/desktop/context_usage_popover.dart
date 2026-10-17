@@ -10,7 +10,6 @@ import '../shared/widgets/context_usage_details.dart';
 import '../shared/widgets/ios_tactile.dart';
 import '../theme/app_font_weights.dart';
 import 'desktop_glass_popover.dart';
-import 'model_spec_edit_dialog.dart';
 
 const Key contextUsagePopoverKey = ValueKey<String>('context-usage-popover');
 
@@ -51,19 +50,7 @@ Future<void> showContextUsagePopover(
     ),
   );
   if (!context.mounted || !requestSetWindow) return;
-
-  final snap = usage.snapshot(conversationId) ?? usage.current;
-  if (snap == null || snap.providerKey.isEmpty || snap.modelId.isEmpty) {
-    return;
-  }
-  final saved = await showDesktopModelSpecEditDialog(
-    context,
-    providerKey: snap.providerKey,
-    modelKey: snap.modelId,
-  );
-  if (saved == true && context.mounted) {
-    await usage.refresh(conversationId, force: true);
-  }
+  await usage.refresh(conversationId, force: true);
 }
 
 class _ContextUsagePopoverContent extends StatelessWidget {

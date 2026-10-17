@@ -1,4 +1,5 @@
-import '../../../core/database/chat_database_repository.dart';
+import '../../../core/models/chat_message.dart';
+import '../../../core/models/conversation.dart';
 import '../../../core/services/chat/chat_service.dart';
 
 class GlobalSessionSearchResult {
@@ -50,18 +51,13 @@ class GlobalSessionSearchService {
     if (tokens.isEmpty) return const <GlobalSessionSearchResult>[];
 
     final out = <GlobalSessionSearchResult>[];
-    final candidates = await chatService.searchConversationMatches(
-      tokens: tokens,
-      limit: limit,
-    );
-    final grouped = <String, List<ConversationSearchMatch>>{};
-    for (final candidate in candidates) {
-      grouped.putIfAbsent(candidate.conversationId, () => []).add(candidate);
-    }
+    final conversations = chatService.getAllConversations();
 
-    for (final matches in grouped.values) {
-      final result = _matchConversationFromSqliteCandidates(
-        matches: matches,
+    for (final conv in conversations) {
+      final messages = chatService.getMessages(conv.id);
+      final result = _matchConversation(
+        conversation: conv,
+        messages: messages,
         tokens: tokens,
       );
       if (result != null) out.add(result);
@@ -77,26 +73,22 @@ class GlobalSessionSearchService {
     return out.sublist(0, limit);
   }
 
-  static GlobalSessionSearchResult? _matchConversationFromSqliteCandidates({
-    required List<ConversationSearchMatch> matches,
+  static GlobalSessionSearchResult? _matchConversation({
+    required Conversation conversation,
+    required List<ChatMessage> messages,
     required List<String> tokens,
   }) {
-    if (matches.isEmpty) return null;
-    final first = matches.first;
-    final title = first.conversationTitle.trim();
+    final title = conversation.title.trim();
     final lowerTitle = title.toLowerCase();
 
     final contentItems = <_ContentRef>[];
-    for (final m in matches) {
-      if (!_isVisibleVersion(m)) continue;
+    for (final m in messages) {
       // Only search visible conversation body: user + assistant messages.
       // Exclude tool/system-like messages and hidden reasoning/thought blocks.
-      if (m.messageRole != 'user' && m.messageRole != 'assistant') continue;
-      final body = _searchableBody(m.messageContent ?? '');
+      if (m.role != 'user' && m.role != 'assistant') continue;
+      final body = _searchableBody(m.content);
       if (body.isEmpty) continue;
-      final messageId = m.messageId;
-      if (messageId == null || messageId.isEmpty) continue;
-      contentItems.add(_ContentRef(messageId: messageId, text: body));
+      contentItems.add(_ContentRef(messageId: m.id, text: body));
     }
     if (contentItems.isEmpty && title.isEmpty) return null;
 
@@ -123,7 +115,6 @@ class GlobalSessionSearchService {
     final targetMessageId = matchedMessageId.isNotEmpty
         ? matchedMessageId
         : fallbackMessageId;
-    // Title-only conversations: targetMessageId is empty but title matched — include with empty messageId
 
     final displayTitle = title.isEmpty ? '(Untitled)' : title;
     var snippet = firstMatchedIndex >= 0
@@ -157,25 +148,14 @@ class GlobalSessionSearchService {
     final score = (titleMatches * 30) + (contentMatches * 10);
 
     return GlobalSessionSearchResult(
-      conversationId: first.conversationId,
+      conversationId: conversation.id,
       conversationTitle: displayTitle,
-      updatedAt: first.updatedAt,
+      updatedAt: conversation.updatedAt,
       firstMatchedMessageId: targetMessageId,
       snippet: snippet,
       score: score,
       titleMatched: hasTitleMatch,
     );
-  }
-
-  static bool _isVisibleVersion(ConversationSearchMatch match) {
-    final messageId = match.messageId;
-    if (messageId == null) return false;
-    final groupId = match.groupId ?? messageId;
-    final selected = match.versionSelections[groupId];
-    final version = match.version ?? 0;
-    if (selected != null) return selected == version;
-    final maxVersion = match.maxVersion;
-    return maxVersion == null || version == maxVersion;
   }
 
   static List<String> _tokensOf(String query) {

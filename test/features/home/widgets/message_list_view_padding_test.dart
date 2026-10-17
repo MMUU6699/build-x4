@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/tts_provider.dart';
 import 'package:Kelivo/core/providers/user_provider.dart';
 import 'package:Kelivo/features/home/controllers/scroll_controller.dart'
     as scroll_ctrl;
@@ -343,14 +342,7 @@ void main() {
           ChangeNotifierProvider.value(
             value: SettingsProvider(createBusinessTestPreferences()),
           ),
-          ChangeNotifierProvider.value(
-            value: AssistantProvider(
-              preferences: createBusinessTestPreferences(),
-            ),
-          ),
-          ChangeNotifierProvider.value(
-            value: TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider.value(value: AssistantProvider()),
           ChangeNotifierProvider.value(value: AskUserInteractionService()),
           ChangeNotifierProvider.value(value: ToolApprovalService()),
         ],
@@ -425,14 +417,7 @@ void main() {
           ChangeNotifierProvider.value(
             value: SettingsProvider(createBusinessTestPreferences()),
           ),
-          ChangeNotifierProvider.value(
-            value: AssistantProvider(
-              preferences: createBusinessTestPreferences(),
-            ),
-          ),
-          ChangeNotifierProvider.value(
-            value: TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider.value(value: AssistantProvider()),
           ChangeNotifierProvider.value(value: AskUserInteractionService()),
           ChangeNotifierProvider.value(value: ToolApprovalService()),
         ],
@@ -513,14 +498,7 @@ void main() {
           ChangeNotifierProvider.value(
             value: SettingsProvider(createBusinessTestPreferences()),
           ),
-          ChangeNotifierProvider.value(
-            value: AssistantProvider(
-              preferences: createBusinessTestPreferences(),
-            ),
-          ),
-          ChangeNotifierProvider.value(
-            value: TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider.value(value: AssistantProvider()),
           ChangeNotifierProvider.value(value: AskUserInteractionService()),
           ChangeNotifierProvider.value(value: ToolApprovalService()),
         ],
@@ -615,14 +593,7 @@ void main() {
           ChangeNotifierProvider.value(
             value: SettingsProvider(createBusinessTestPreferences()),
           ),
-          ChangeNotifierProvider.value(
-            value: AssistantProvider(
-              preferences: createBusinessTestPreferences(),
-            ),
-          ),
-          ChangeNotifierProvider.value(
-            value: TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider.value(value: AssistantProvider()),
           ChangeNotifierProvider.value(value: AskUserInteractionService()),
           ChangeNotifierProvider.value(value: ToolApprovalService()),
         ],
@@ -720,14 +691,7 @@ void main() {
           ChangeNotifierProvider.value(
             value: SettingsProvider(createBusinessTestPreferences()),
           ),
-          ChangeNotifierProvider.value(
-            value: AssistantProvider(
-              preferences: createBusinessTestPreferences(),
-            ),
-          ),
-          ChangeNotifierProvider.value(
-            value: TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider.value(value: AssistantProvider()),
           ChangeNotifierProvider.value(value: AskUserInteractionService()),
           ChangeNotifierProvider.value(value: ToolApprovalService()),
         ],
@@ -812,17 +776,8 @@ void main() {
           ChangeNotifierProvider.value(
             value: SettingsProvider(createBusinessTestPreferences()),
           ),
-          ChangeNotifierProvider.value(
-            value: AssistantProvider(
-              preferences: createBusinessTestPreferences(),
-            ),
-          ),
-          ChangeNotifierProvider.value(
-            value: TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
-          ChangeNotifierProvider.value(
-            value: UserProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider.value(value: AssistantProvider()),
+          ChangeNotifierProvider.value(value: UserProvider()),
           ChangeNotifierProvider.value(value: AskUserInteractionService()),
           ChangeNotifierProvider.value(value: ToolApprovalService()),
         ],
@@ -1381,18 +1336,8 @@ class _PrependingMessageListHarnessState
         ChangeNotifierProvider(
           create: (_) => SettingsProvider(createBusinessTestPreferences()),
         ),
-        ChangeNotifierProvider(
-          create: (_) =>
-              AssistantProvider(preferences: createBusinessTestPreferences()),
-        ),
-        ChangeNotifierProvider(
-          create: (_) =>
-              TtsProvider(preferences: createBusinessTestPreferences()),
-        ),
-        ChangeNotifierProvider(
-          create: (_) =>
-              UserProvider(preferences: createBusinessTestPreferences()),
-        ),
+        ChangeNotifierProvider(create: (_) => AssistantProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => AskUserInteractionService()),
         ChangeNotifierProvider(create: (_) => ToolApprovalService()),
       ],
@@ -1454,17 +1399,8 @@ Future<void> _pumpEstimatorHarness(
         ChangeNotifierProvider.value(
           value: SettingsProvider(createBusinessTestPreferences()),
         ),
-        ChangeNotifierProvider.value(
-          value: AssistantProvider(
-            preferences: createBusinessTestPreferences(),
-          ),
-        ),
-        ChangeNotifierProvider.value(
-          value: TtsProvider(preferences: createBusinessTestPreferences()),
-        ),
-        ChangeNotifierProvider.value(
-          value: UserProvider(preferences: createBusinessTestPreferences()),
-        ),
+        ChangeNotifierProvider.value(value: AssistantProvider()),
+        ChangeNotifierProvider.value(value: UserProvider()),
         ChangeNotifierProvider.value(value: AskUserInteractionService()),
         ChangeNotifierProvider.value(value: ToolApprovalService()),
       ],

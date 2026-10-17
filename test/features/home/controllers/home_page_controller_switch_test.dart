@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../support/business_test_harness.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
@@ -23,7 +24,7 @@ class _PageRequest {
   _PageRequest({required this.conversationId, required this.completer});
 
   final String conversationId;
-  final Completer<LoadedTimelinePage?> completer;
+  final Completer<LoadedTimelinePage> completer;
 }
 
 class _ControlledChatService extends ChatService {
@@ -44,15 +45,18 @@ class _ControlledChatService extends ChatService {
   String? get currentConversationId => _trackedCurrentConversationId;
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) {
-    final completer = Completer<LoadedTimelinePage?>();
+    final completer = Completer<LoadedTimelinePage>();
     pageRequests.add(
       _PageRequest(conversationId: conversationId, completer: completer),
     );
@@ -64,7 +68,6 @@ class _ControlledChatService extends ChatService {
     List<ChatMessage> messages, {
     required int startIndex,
   }) {
-    final timestamp = DateTime(2026, 7, 11);
     request.completer.complete(
       LoadedTimelinePage(
         conversationId: request.conversationId,
@@ -74,13 +77,9 @@ class _ControlledChatService extends ChatService {
           for (final (offset, message) in messages.indexed)
             LoadedTimelineSlot(
               identity: ActiveTimelineSlot(
-                slotId: message.groupId ?? message.id,
                 revisionId: message.id,
-                parentRevisionId: null,
-                role: message.role,
-                createdAt: timestamp,
-                updatedAt: timestamp,
-                finalizedAt: timestamp,
+                groupId: message.groupId ?? message.id,
+                version: message.version,
                 versionCount: 1,
                 logicalIndex: startIndex + offset,
               ),
@@ -111,7 +110,7 @@ class _ControlledChatService extends ChatService {
   Future<Conversation> createDraftConversation({
     String? title,
     String? assistantId,
-    bool temporary = false,
+    bool? temporary,
     bool reuseNewEntry = false,
   }) async {
     final conversation = Conversation(
@@ -147,7 +146,6 @@ class _ControlledChatService extends ChatService {
     checkpointWrites++;
   }
 
-  @override
   List<ChatMessage> getMessagesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -159,13 +157,11 @@ class _ControlledChatService extends ChatService {
     Iterable<String> groupIds,
   ) async => const <ChatMessage>[];
 
-  @override
   Map<String, int> getFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
   ) => const <String, int>{};
 
-  @override
   Future<Map<String, int>> loadFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -183,6 +179,9 @@ ChatMessage _message(String conversationId, int index) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   /// Runs [body] with the platform overridden to Android so the mobile
   /// (animated) switching pipeline is exercised. The override must be reset
@@ -212,16 +211,14 @@ void main() {
     _ControlledChatService service,
   ) async {
     HomePageController? controller;
+    final prefs = createBusinessTestPreferences();
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider(
-            create: (_) => SettingsProvider(createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider(create: (_) => SettingsProvider(prefs)),
           ChangeNotifierProvider<ChatService>.value(value: service),
           ChangeNotifierProvider(
-            create: (_) =>
-                AssistantProvider(preferences: createBusinessTestPreferences()),
+            create: (_) => AssistantProvider(preferences: prefs),
           ),
         ],
         child: MaterialApp(
@@ -723,7 +720,17 @@ void main() {
         // prepare returns null when the conversation is gone; still need to
         // complete any queued page request if one was issued.
         if (service.pageRequests.length > 1) {
-          service.pageRequests.last.completer.complete(null);
+          service.pageRequests.last.completer.complete(
+            LoadedTimelinePage(
+              conversationId: 'missing',
+              stateRevision: 0,
+              contextStartRevisionId: null,
+              slots: const [],
+              hasMoreBefore: false,
+              hasMoreAfter: false,
+              totalSlotCount: 0,
+            ),
+          );
         }
         await pumpUntilDone(tester, [future]);
 

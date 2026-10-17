@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
 import '../../providers/settings_provider.dart';
-import '../../services/api_key_manager.dart';
 import '../../utils/multimodal_input_utils.dart';
 import '../../../utils/sandbox_path_resolver.dart';
 import '../logging/flutter_logger.dart';
@@ -52,7 +51,7 @@ String apiKeyForRequest(ProviderConfig cfg, String modelId) {
 }
 
 String effectiveApiKey(ProviderConfig cfg) {
-  return ApiKeyManager().effectiveKeyForProvider(cfg);
+  return cfg.apiKey;
 }
 
 // Read built-in tools configured per model (e.g., ['search', 'url_context']).

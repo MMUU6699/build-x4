@@ -1,3 +1,0 @@
-#!/bin/sh
-# Route xdg-open(1) into kelivo-open (OSC KelivoOpenURL marker).
-exec /usr/local/bin/kelivo-open "$@"

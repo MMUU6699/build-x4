@@ -172,6 +172,8 @@ class WorkspaceRuntimeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setRuntime(WorkspaceRuntime runtime) => register(runtime);
+
   Future<RuntimeStatus> refresh() async {
     final current = runtime;
     if (current == null) {

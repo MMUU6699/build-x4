@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:Kelivo/core/database/business_settings_router.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/theme/chat_bubble_style.dart';
 
@@ -218,25 +217,6 @@ void main() {
     expect(
       harness.preferences.getString('chat_bubble_style_overrides_v1'),
       '{}',
-    );
-  });
-
-  test('backup registry classifies the overrides key as a preference', () {
-    expect(
-      BusinessKeyRegistry.classify('chat_bubble_style_overrides_v1'),
-      BusinessKeyDisposition.preference,
-    );
-    expect(
-      BusinessKeyRegistry.preferenceKeys,
-      contains('chat_bubble_style_overrides_v1'),
-    );
-    expect(
-      BusinessKeyRegistry.classify('chat_bubble_style_overrides_user_v1'),
-      BusinessKeyDisposition.preference,
-    );
-    expect(
-      BusinessKeyRegistry.preferenceKeys,
-      contains('chat_bubble_style_overrides_user_v1'),
     );
   });
 }

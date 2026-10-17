@@ -17,11 +17,16 @@ class _BackfillChatService extends ChatService {
 
   int loadCallsFor(String conversationId) => fullLoadCalls[conversationId] ?? 0;
 
-  @override
   bool isConversationFullyCached(String conversationId) => fullyCached;
 
   @override
-  Future<List<ChatMessage>> loadMessages(String conversationId) async {
+  Future<List<ChatMessage>> loadMessages(
+    String conversationId, {
+    int? limit,
+    int? offset,
+    bool includeFollowingAssistant = false,
+    String? throughRevisionId,
+  }) async {
     fullLoadCalls[conversationId] = loadCallsFor(conversationId) + 1;
     fullyCached = true;
     return List<ChatMessage>.of(_messages(conversationId));
@@ -37,18 +42,21 @@ class _BackfillChatService extends ChatService {
   ).indexWhere((message) => message.id == messageId);
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) async {
+    final effectiveLimit = limit ?? 40;
     final all = _messages(conversationId);
-    final start = (all.length - limit).clamp(0, all.length);
+    final start = (all.length - effectiveLimit).clamp(0, all.length);
     final selected = all.sublist(start);
-    final timestamp = DateTime(2026, 7, 11);
     return LoadedTimelinePage(
       conversationId: conversationId,
       stateRevision: 0,
@@ -57,13 +65,9 @@ class _BackfillChatService extends ChatService {
         for (final (offset, message) in selected.indexed)
           LoadedTimelineSlot(
             identity: ActiveTimelineSlot(
-              slotId: message.groupId ?? message.id,
               revisionId: message.id,
-              parentRevisionId: null,
-              role: message.role,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-              finalizedAt: timestamp,
+              groupId: message.groupId ?? message.id,
+              version: message.version,
               versionCount: 1,
               logicalIndex: start + offset,
             ),
@@ -91,7 +95,6 @@ class _BackfillChatService extends ChatService {
   Map<String, int> getVersionSelections(String conversationId) =>
       const <String, int>{};
 
-  @override
   List<ChatMessage> getMessagesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -103,13 +106,11 @@ class _BackfillChatService extends ChatService {
     Iterable<String> groupIds,
   ) async => const <ChatMessage>[];
 
-  @override
   Map<String, int> getFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
   ) => const <String, int>{};
 
-  @override
   Future<Map<String, int>> loadFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,

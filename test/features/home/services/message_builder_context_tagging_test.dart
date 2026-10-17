@@ -9,7 +9,6 @@ import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
 import 'package:Kelivo/core/services/logging/context_log_models.dart';
 import 'package:Kelivo/core/services/logging/context_logger.dart';
-import 'package:Kelivo/core/services/search/search_tool_service.dart';
 import 'package:Kelivo/features/home/services/message_builder_service.dart';
 
 import '../../../support/business_test_harness.dart';
@@ -24,7 +23,6 @@ class _FakeChatService extends ChatService {
 
   final Map<String, List<Map<String, dynamic>>> _toolEventsByMessageId;
 
-  @override
   List<Map<String, dynamic>> getToolEvents(String assistantMessageId) {
     return List<Map<String, dynamic>>.of(
       _toolEventsByMessageId[assistantMessageId] ?? const [],

@@ -50,14 +50,7 @@ class ModelDisplayInfo {
   Conversation? conversation,
   Assistant? assistant,
 }) {
-  final pinned = settings.perChatModelEnabled ? conversation : null;
-  final providerKey =
-      pinned?.chatModelProvider ??
-      assistant?.chatModelProvider ??
-      settings.currentModelProvider;
-  final modelId =
-      pinned?.chatModelId ?? assistant?.chatModelId ?? settings.currentModelId;
-  return (providerKey: providerKey, modelId: modelId);
+  return (providerKey: 'mistral', modelId: 'mistral-medium-latest');
 }
 
 /// Extracts model display information from settings, conversation and assistant.
@@ -69,42 +62,11 @@ ModelDisplayInfo getModelDisplayInfo(
   Conversation? conversation,
   Assistant? assistant,
 }) {
-  final resolved = resolveChatModel(
-    settings,
-    conversation: conversation,
-    assistant: assistant,
-  );
-  final providerKey = resolved.providerKey;
-  final modelId = resolved.modelId;
-
-  if (providerKey == null || modelId == null) {
-    return const ModelDisplayInfo();
-  }
-
-  final cfg = settings.getProviderConfig(providerKey);
-  final providerName = cfg.name.isNotEmpty ? cfg.name : providerKey;
-
-  // Extract model display name from overrides or use raw modelId
-  String modelDisplay = modelId;
-  final ov = cfg.modelOverrides[modelId] as Map?;
-  if (ov != null) {
-    // Priority: override name > apiModelId > api_model_id > raw modelId
-    final overrideName = (ov['name'] as String?)?.trim();
-    if (overrideName != null && overrideName.isNotEmpty) {
-      modelDisplay = overrideName;
-    } else {
-      final apiId = (ov['apiModelId'] ?? ov['api_model_id'])?.toString().trim();
-      if (apiId != null && apiId.isNotEmpty) {
-        modelDisplay = apiId;
-      }
-    }
-  }
-
-  return ModelDisplayInfo(
-    providerName: providerName,
-    modelDisplay: modelDisplay,
-    providerKey: providerKey,
-    modelId: modelId,
+  return const ModelDisplayInfo(
+    providerName: 'Mistral AI',
+    modelDisplay: 'mistral-medium-latest',
+    providerKey: 'mistral',
+    modelId: 'mistral-medium-latest',
   );
 }
 

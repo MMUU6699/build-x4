@@ -14,6 +14,8 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Build X</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,8 +31,8 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Kelivo 使用麦克风录制您主动提交的语音并转换为文字；我们不会收集这些信息。 / Kelivo uses the microphone to record audio you choose to submit for transcription; Kelivo does not collect this information.</string>
+	<string>Build X 使用麦克风录制您主动提交的语音并转换为文字；我们不会收集这些信息。 / Build X uses the microphone to record audio you choose to submit for transcription; Build X does not collect this information.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Kelivo 使用系统语音识别将您主动录制的语音转换为文字。您的数据由系统处理；我们不会收集这些信息。 / Kelivo uses system speech recognition to turn audio you choose to record into text. Your data is processed by the system; Kelivo does not collect this information.</string>
+	<string>Build X 使用系统语音识别将您主动录制的语音转换为文字。您的数据由系统处理；我们不会收集这些信息。 / Build X uses system speech recognition to turn audio you choose to record into text. Your data is processed by the system; Build X does not collect this information.</string>
 </dict>
 </plist>

@@ -23,7 +23,6 @@ class _DraftService extends ChatService {
   final targets = <Conversation>[];
   bool failLoad = false;
   Completer<void>? createGate;
-  @override
   bool isConversationFullyCached(String conversationId) => true;
   @override
   List<Conversation> getAllConversations() => targets;
@@ -36,23 +35,34 @@ class _DraftService extends ChatService {
   }
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) async {
     if (failLoad) throw StateError('Unable to read conversation');
-    return null;
+    return LoadedTimelinePage(
+      conversationId: conversationId,
+      stateRevision: 0,
+      contextStartRevisionId: null,
+      slots: const [],
+      hasMoreBefore: false,
+      hasMoreAfter: false,
+      totalSlotCount: 0,
+    );
   }
 
   @override
   Future<Conversation> createDraftConversation({
     String? title,
     String? assistantId,
-    bool temporary = false,
+    bool? temporary,
     bool reuseNewEntry = false,
   }) async {
     await createGate?.future;
@@ -507,10 +517,7 @@ Widget _app(_DraftService service, GlobalKey<_HarnessState> key) =>
           create: (_) => SettingsProvider(createBusinessTestPreferences()),
         ),
         ChangeNotifierProvider<ChatService>.value(value: service),
-        ChangeNotifierProvider(
-          create: (_) =>
-              AssistantProvider(preferences: createBusinessTestPreferences()),
-        ),
+        ChangeNotifierProvider(create: (_) => AssistantProvider()),
       ],
       child: MaterialApp(
         locale: const Locale('en'),

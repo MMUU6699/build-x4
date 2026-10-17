@@ -3,9 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:Kelivo/core/providers/assistant_provider.dart';
-import 'package:Kelivo/core/providers/instruction_injection_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/world_book_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
 import 'package:Kelivo/features/chat/widgets/context_management_sheet.dart';
 import 'package:Kelivo/features/chat/widgets/context_usage_header.dart';
@@ -20,8 +18,6 @@ class _RecordingUsage extends ContextUsageService {
     required super.chatService,
     required super.settings,
     required super.assistants,
-    required super.instructions,
-    required super.worldBooks,
   });
 
   ContextUsageSnapshot? seeded;
@@ -52,23 +48,13 @@ void main() {
 
   testWidgets('header renders and triggers refresh on open', (tester) async {
     final settings = SettingsProvider(createBusinessTestPreferences());
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await settings.loaded;
     await assistants.loaded;
-    final instructions = InstructionInjectionProvider(
-      preferences: createBusinessTestPreferences(),
-    );
-    final worldBooks = WorldBookProvider(
-      preferences: createBusinessTestPreferences(),
-    );
     final usage = _RecordingUsage(
       chatService: ChatService(),
       settings: settings,
       assistants: assistants,
-      instructions: instructions,
-      worldBooks: worldBooks,
     );
     usage.seeded = ContextUsageSnapshot(
       state: ContextUsageState.estimated,
@@ -91,8 +77,6 @@ void main() {
     );
     addTearDown(assistants.dispose);
     addTearDown(settings.dispose);
-    addTearDown(instructions.dispose);
-    addTearDown(worldBooks.dispose);
     addTearDown(usage.dispose);
 
     await tester.pumpWidget(

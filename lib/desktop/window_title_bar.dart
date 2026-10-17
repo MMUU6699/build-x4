@@ -7,9 +7,16 @@ import 'package:window_manager/window_manager.dart';
 /// - Renders minimize / maximize / restore / close buttons
 /// - Accepts optional left-side children (e.g., app icon, menu toggle)
 class WindowTitleBar extends StatefulWidget {
-  const WindowTitleBar({super.key, this.leftChildren = const <Widget>[]});
+  const WindowTitleBar({
+    super.key,
+    this.leftChildren = const <Widget>[],
+    this.title,
+    this.leading,
+  });
 
   final List<Widget> leftChildren;
+  final String? title;
+  final Widget? leading;
 
   @override
   State<WindowTitleBar> createState() => _WindowTitleBarState();
@@ -67,7 +74,12 @@ class _WindowTitleBarState extends State<WindowTitleBar> with WindowListener {
       child: Row(
         children: [
           const SizedBox(width: 6),
+          if (widget.leading != null) widget.leading!,
           ...widget.leftChildren,
+          if (widget.title != null) ...[
+            const SizedBox(width: 8),
+            Text(widget.title!, style: theme.textTheme.titleSmall),
+          ],
           // https://github.com/leanflutter/window_manager/issues/136
           // Only the middle area should be draggable, not the buttons.
           Expanded(child: DragToMoveArea(child: const SizedBox.expand())),

@@ -12,9 +12,7 @@ void main() {
     tester,
   ) async {
     final settings = SettingsProvider(createBusinessTestPreferences());
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await settings.loaded;
     await assistants.loaded;
     addTearDown(settings.dispose);

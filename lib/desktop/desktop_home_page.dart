@@ -6,8 +6,7 @@ import 'desktop_nav_rail.dart';
 import 'desktop_chat_page.dart';
 import 'window_title_bar.dart';
 import 'desktop_settings_page.dart';
-import 'desktop_translate_page.dart';
-import '../features/settings/pages/storage_space_page.dart';
+import '../features/workspace/pages/workspaces_page.dart';
 import '../l10n/app_localizations.dart';
 import 'package:window_manager/window_manager.dart';
 import 'dart:async';
@@ -17,7 +16,6 @@ import 'desktop_settings_navigation_bus.dart';
 import '../core/services/notification_service.dart';
 
 /// Desktop home screen: left compact rail + main content.
-/// Phase 1 focuses on structure and platform-appropriate interactions/hover.
 class DesktopHomePage extends StatefulWidget {
   const DesktopHomePage({
     super.key,
@@ -25,7 +23,7 @@ class DesktopHomePage extends StatefulWidget {
     this.initialProviderKey,
   });
 
-  final int? initialTabIndex; // 0=Chat,1=Translate,2=Storage,3=Settings
+  final int? initialTabIndex; // 0=Chat, 1=Workspaces, 2=Settings
   final String? initialProviderKey;
 
   @override
@@ -33,9 +31,7 @@ class DesktopHomePage extends StatefulWidget {
 }
 
 class _DesktopHomePageState extends State<DesktopHomePage> {
-  int _tabIndex = 0; // 0=Chat, 1=Translate, 2=Storage, 3=Settings
-  bool _storageVisited = false;
-  bool _globalSearchActive = false;
+  int _tabIndex = 0; // 0=Chat, 1=Workspaces, 2=Settings
   StreamSubscription<HotkeyAction>? _hotkeySub;
   StreamSubscription<ChatAction>? _chatActionSub;
   StreamSubscription<DesktopSettingsNavigationTarget>? _settingsNavSub;
@@ -45,31 +41,26 @@ class _DesktopHomePageState extends State<DesktopHomePage> {
   void initState() {
     super.initState();
     if (widget.initialTabIndex != null) {
-      _tabIndex = widget.initialTabIndex!.clamp(0, 3);
+      _tabIndex = widget.initialTabIndex!.clamp(0, 2);
     }
-    _storageVisited = _tabIndex == 2;
     _conversationOpenSub = NotificationService.conversationTaps.listen((_) {
       if (!mounted) return;
       setState(() {
         _tabIndex = 0;
-        _globalSearchActive = false;
       });
       ChatActionBus.instance.fire(ChatAction.exitGlobalSearch);
     });
-    // 初始进入时如果就是聊天页，则聚焦聊天输入框
     if (_tabIndex == 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ChatActionBus.instance.fire(ChatAction.focusInput);
       });
     }
-    // Listen to global hotkey actions affecting the main tabs/window
     _hotkeySub = HotkeyEventBus.instance.stream.listen((action) async {
       switch (action) {
         case HotkeyAction.openSettings:
           if (mounted) {
             setState(() {
-              _tabIndex = 3;
-              _globalSearchActive = false;
+              _tabIndex = 2;
             });
             ChatActionBus.instance.fire(ChatAction.exitGlobalSearch);
           }
@@ -80,25 +71,12 @@ class _DesktopHomePageState extends State<DesktopHomePage> {
           } catch (_) {}
           break;
         case HotkeyAction.toggleAppVisibility:
+        case HotkeyAction.showOrHideWindow:
           try {
-            final visible = await windowManager.isVisible();
-            final minimized = await windowManager.isMinimized();
-            final focused = await windowManager.isFocused();
-
-            // 优先级：
-            // 1. 如果窗口不可见或最小化，则显示并聚焦
-            // 2. 如果窗口可见但未聚焦，则聚焦
-            // 3. 如果窗口可见且已聚焦，则隐藏
-            if (!visible || minimized) {
+            final isVisible = await windowManager.isVisible();
+            if (!isVisible) {
               await windowManager.show();
               await windowManager.focus();
-              // 如果当前是聊天页，显示窗口时聚焦输入框
-              if (_tabIndex == 0) {
-                ChatActionBus.instance.fire(ChatAction.focusInput);
-              }
-            } else if (!focused) {
-              await windowManager.focus();
-              // 如果当前是聊天页，聚焦窗口时也聚焦输入框
               if (_tabIndex == 0) {
                 ChatActionBus.instance.fire(ChatAction.focusInput);
               }
@@ -113,9 +91,6 @@ class _DesktopHomePageState extends State<DesktopHomePage> {
           }
           break;
         case HotkeyAction.switchModel:
-          if (_tabIndex == 0) {
-            ChatActionBus.instance.fire(ChatAction.switchModel);
-          }
           break;
         case HotkeyAction.toggleLeftPanelAssistants:
           if (_tabIndex == 0) {
@@ -136,12 +111,6 @@ class _DesktopHomePageState extends State<DesktopHomePage> {
         case ChatAction.enterGlobalSearch:
           setState(() {
             _tabIndex = 0;
-            _globalSearchActive = true;
-          });
-          break;
-        case ChatAction.exitGlobalSearch:
-          setState(() {
-            _globalSearchActive = false;
           });
           break;
         default:
@@ -152,24 +121,16 @@ class _DesktopHomePageState extends State<DesktopHomePage> {
       target,
     ) {
       if (!mounted) return;
-      switch (target) {
-        case DesktopSettingsNavigationTarget.backup:
-          setState(() {
-            _tabIndex = 3;
-            _globalSearchActive = false;
-          });
-          ChatActionBus.instance.fire(ChatAction.exitGlobalSearch);
-          break;
-      }
+      setState(() {
+        _tabIndex = 2;
+      });
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Ensure a reasonable min size to avoid overflow on aggressive resize.
     const minWidth = 960.0;
     const minHeight = 640.0;
-
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
 
     return LayoutBuilder(
@@ -183,60 +144,32 @@ class _DesktopHomePageState extends State<DesktopHomePage> {
           children: [
             DesktopNavRail(
               activeIndex: _tabIndex,
-              globalSearchActive: _globalSearchActive,
               onTapChat: () {
                 setState(() {
                   _tabIndex = 0;
-                  _globalSearchActive = false;
                 });
                 ChatActionBus.instance.fire(ChatAction.exitGlobalSearch);
-                // 切换到聊天页时聚焦输入框
                 ChatActionBus.instance.fire(ChatAction.focusInput);
               },
-              onTapGlobalSearch: () {
-                setState(() {
-                  _tabIndex = 0;
-                  _globalSearchActive = true;
-                });
-                ChatActionBus.instance.fire(ChatAction.enterGlobalSearch);
-              },
-              onTapTranslate: () {
+              onTapWorkspaces: () {
                 setState(() {
                   _tabIndex = 1;
-                  _globalSearchActive = false;
                 });
                 ChatActionBus.instance.fire(ChatAction.exitGlobalSearch);
               },
-              onTapStorage: () => setState(() {
-                _tabIndex = 2;
-                _globalSearchActive = false;
-                _storageVisited = true;
-                ChatActionBus.instance.fire(ChatAction.exitGlobalSearch);
-              }),
               onTapSettings: () {
                 setState(() {
-                  _tabIndex = 3;
-                  _globalSearchActive = false;
+                  _tabIndex = 2;
                 });
                 ChatActionBus.instance.fire(ChatAction.exitGlobalSearch);
               },
             ),
             Expanded(
-              // Keep all pages alive so ongoing chat streams are not canceled
-              // when switching tabs (Chat/Translate/Settings) on desktop.
               child: IndexedStack(
                 index: _tabIndex,
                 children: [
-                  // Chat page remains mounted
                   const DesktopChatPage(),
-                  // Translate page remains mounted
-                  const DesktopTranslatePage(key: ValueKey('translate_page')),
-                  _storageVisited
-                      ? const StorageSpacePage(
-                          key: ValueKey('storage_space_page'),
-                          embedded: true,
-                        )
-                      : const SizedBox.shrink(),
+                  const WorkspacesPage(),
                   DesktopSettingsPage(
                     key: const ValueKey('settings_page'),
                     initialProviderKey: widget.initialProviderKey,
@@ -247,53 +180,42 @@ class _DesktopHomePageState extends State<DesktopHomePage> {
           ],
         );
 
-        // Wrap with Windows custom title bar when on Windows platform.
-        final content = isWindows
-            ? Column(
-                children: [
-                  WindowTitleBar(
-                    leftChildren: [
-                      SizedBox(width: DesktopNavRail.width / 2 - 8 - 6 - 12),
-                      const _TitleBarLeading(),
-                    ],
-                  ),
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        body,
-                        // Inject the lazily-built settings page into the IndexedStack when needed
-                        // to pass initialProviderKey without dropping chat state.
-                        if (_tabIndex == 3) const SizedBox.shrink(),
-                      ],
-                    ),
-                  ),
-                ],
-              )
-            : body;
+        if (isWindows) {
+          body = Column(
+            children: [
+              const WindowTitleBar(
+                title: 'Build X',
+                leading: _TitleBarLeading(),
+              ),
+              Expanded(child: body),
+            ],
+          );
+        }
 
-        // if (!needsWidthPad && !needsHeightPad) return content;
+        if (needsWidthPad || needsHeightPad) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: SizedBox(
+                width: w < minWidth ? minWidth : w,
+                height: h < minHeight ? minHeight : h,
+                child: body,
+              ),
+            ),
+          );
+        }
 
-        // Center a constrained area if window is smaller than our minimum
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              minWidth: minWidth,
-              minHeight: minHeight,
-            ),
-            child: SizedBox(
-              width: needsWidthPad ? minWidth : w,
-              height: needsHeightPad ? minHeight : h,
-              child: content,
-            ),
-          ),
-        );
+        return body;
       },
     );
   }
 
   @override
   void dispose() {
-    unawaited(_conversationOpenSub?.cancel());
+    try {
+      _conversationOpenSub?.cancel();
+    } catch (_) {}
     try {
       _hotkeySub?.cancel();
     } catch (_) {}
@@ -307,8 +229,6 @@ class _DesktopHomePageState extends State<DesktopHomePage> {
   }
 }
 
-// No extra router/shim; we import DesktopSettingsPage directly above.
-
 class _TitleBarLeading extends StatelessWidget {
   const _TitleBarLeading();
 
@@ -319,22 +239,19 @@ class _TitleBarLeading extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // App icon
         Image.asset(
-          'assets/icons/kelivo.png',
+          'assets/app_icon.png',
           width: 16,
           height: 16,
           filterQuality: FilterQuality.medium,
         ),
         const SizedBox(width: 8),
-        // App name
         Text(
           l10n.aboutPageAppName,
           style: TextStyle(
             fontSize: 13,
             fontWeight: AppFontWeights.semibold,
             color: cs.onSurface.withValues(alpha: 0.8),
-            // Avoid accidental underline when not under a Material ancestor in edge cases
             decoration: TextDecoration.none,
           ),
         ),

@@ -3,7 +3,6 @@ import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/message_part.dart';
 import 'package:Kelivo/core/models/token_usage.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/tts_provider.dart';
 import 'package:Kelivo/features/chat/pages/image_viewer_page.dart';
 import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/chat/widgets/timeline_projection.dart';
@@ -28,10 +27,6 @@ Widget _buildHarness({
       ChangeNotifierProvider(
         create: (_) =>
             settings ?? SettingsProvider(createBusinessTestPreferences()),
-      ),
-      ChangeNotifierProvider(
-        create: (_) =>
-            TtsProvider(preferences: createBusinessTestPreferences()),
       ),
       ChangeNotifierProvider(create: (_) => ToolApprovalService()),
       ChangeNotifierProvider(create: (_) => AskUserInteractionService()),

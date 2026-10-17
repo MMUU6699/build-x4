@@ -9,7 +9,6 @@ import '../../../core/services/api/chat_api_service.dart';
 import '../../../core/models/reasoning_request.dart';
 import '../../../core/services/api/reasoning/reasoning_dialects.dart';
 import '../../../core/services/chat/chat_service.dart';
-import '../../../core/services/mcp/mcp_tool_service.dart';
 import '../../../core/services/workspace/workspace_tools_service.dart';
 import '../../../utils/assistant_regex.dart';
 import '../../../core/models/assistant_regex.dart';
@@ -68,7 +67,7 @@ class GenerationController {
     Map<String, dynamic> schema,
     ProviderKind kind,
   ) {
-    return ToolHandlerService.sanitizeToolParametersForProvider(schema, kind);
+    return schema;
   }
 
   // ============================================================================
@@ -117,7 +116,6 @@ class GenerationController {
       providerKey,
       modelId,
       hasBuiltInSearch,
-      isToolModel: isToolModel,
       mcpRouteSnapshot: mcpRouteSnapshot,
       workspaceContext: workspaceContext,
       conversationId: conversationId,

@@ -18,10 +18,6 @@ import '../../../theme/design_tokens.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/services/model_spec/model_spec_resolver.dart';
 import '../../../core/providers/assistant_provider.dart';
-import '../../../core/providers/quick_phrase_provider.dart';
-import '../../../core/providers/instruction_injection_provider.dart';
-import '../../../core/providers/world_book_provider.dart';
-import '../../../core/models/quick_phrase.dart';
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/compress_context_options.dart';
@@ -29,38 +25,22 @@ import '../../../core/services/android_process_text.dart';
 import '../../../core/services/incoming_share_service.dart';
 import '../../../core/services/logging/flutter_logger.dart';
 import '../../../utils/platform_utils.dart';
-import '../../../desktop/search_provider_popover.dart';
 import '../../../desktop/reasoning_level_popover.dart';
 import '../../../desktop/context_usage_popover.dart';
-import '../../../desktop/tools_popover.dart';
 import '../../../desktop/workspace_dialog.dart';
 import '../../../desktop/skills_popover.dart';
 import '../../../desktop/mini_map_popover.dart';
-import '../../../desktop/quick_phrase_popover.dart';
-import '../../../desktop/instruction_injection_popover.dart';
-import '../../../desktop/world_book_popover.dart';
 import '../../../icons/lucide_adapter.dart';
-import '../../chat/widgets/bottom_tools_sheet.dart';
-import '../../chat/widgets/chat_tools_sheet.dart';
 import '../../chat/utils/ensure_conversation.dart';
 import '../../chat/widgets/context_management_sheet.dart';
 import '../../chat/widgets/reasoning_level_sheet.dart';
-import '../../search/widgets/search_settings_sheet.dart';
 import '../../chat/widgets/frosted/chat_frosted_backdrop.dart';
 import '../../chat/widgets/chat_assistant_background.dart';
-import '../../model/widgets/model_select_sheet.dart';
-import '../../mcp/pages/mcp_page.dart';
-import '../../provider/pages/providers_page.dart';
-import '../../quick_phrase/pages/quick_phrases_page.dart';
-import '../../quick_phrase/widgets/quick_phrase_menu.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/mini_map_sheet.dart';
-import '../widgets/instruction_injection_sheet.dart';
-import '../widgets/world_book_sheet.dart';
-import '../widgets/learning_prompt_sheet.dart';
-import '../widgets/scroll_nav_buttons.dart';
 import '../widgets/message_list_view.dart';
 import '../widgets/chat_input_section.dart';
+import '../../chat/widgets/chat_empty_state_suggestions.dart';
 import '../widgets/conversation_system_prompt_button.dart';
 import '../widgets/chat_input_overlay_layout.dart';
 import '../widgets/chat_selection_app_bar.dart';
@@ -80,63 +60,6 @@ class HomePage extends StatefulWidget {
 
   @override
   State<HomePage> createState() => _HomePageState();
-}
-
-class _TemporaryConversationEmptyState extends StatelessWidget {
-  const _TemporaryConversationEmptyState({
-    required this.topContentPadding,
-    required this.bottomContentPadding,
-    this.footer,
-  });
-
-  final double topContentPadding;
-  final double bottomContentPadding;
-  final Widget? footer;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final cs = Theme.of(context).colorScheme;
-
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          32,
-          topContentPadding + 24,
-          32,
-          bottomContentPadding + 24,
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Lucide.HatGlasses,
-                size: 72,
-                color: cs.onSurface.withValues(alpha: 0.42),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                l10n.temporaryChatEmptyMessage,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 15,
-                  height: 1.45,
-                  color: cs.onSurface.withValues(alpha: 0.68),
-                  fontWeight: AppFontWeights.medium,
-                ),
-              ),
-              if (footer != null) ...[
-                const SizedBox(height: 16),
-                SizedBox(height: 48, child: footer),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 String _compressContextErrorMessage(AppLocalizations l10n, String error) {
@@ -505,18 +428,7 @@ class _CompressModelPickerRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           pressedScale: 0.98,
           haptics: false,
-          onTap: () async {
-            final sel = await showModelSelector(
-              context,
-              initialProviderKey: resolved.providerKey,
-              initialModelId: resolved.modelId,
-            );
-            if (sel == null || !context.mounted) return;
-            await context.read<SettingsProvider>().setCompressModel(
-              sel.providerKey,
-              sel.modelId,
-            );
-          },
+          onTap: () {},
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
@@ -713,7 +625,6 @@ class _HomePageState extends State<HomePage>
   final GlobalKey _inputBarKey = GlobalKey();
   final GlobalKey _selectionMiniMapKey = GlobalKey();
   final GlobalKey _selectionActionBarKey = GlobalKey();
-  bool _scrollNavHovering = false;
   double _lastViewInsetBottom = 0;
   StreamSubscription<String>? _processTextSub;
   IncomingShareService? _incomingShares;
@@ -762,8 +673,6 @@ class _HomePageState extends State<HomePage>
         _lastViewInsetBottom = View.of(context).viewInsets.bottom;
       }
       _controller.measureInputBar();
-      if (!mounted) return;
-      context.read<WorldBookProvider>().initialize();
     });
   }
 
@@ -896,9 +805,9 @@ class _HomePageState extends State<HomePage>
         final pendingShares = await service.pending();
         final shares = <IncomingShare>[];
         for (final share in pendingShares) {
-          if (await drafts?.hasShareReceipt(share.id) == true) {
+          if (drafts.hasShareReceipt(share.id)) {
             await service.acknowledge([share]);
-            await drafts?.acknowledgeShares([share.id]);
+            drafts.acknowledgeShares([share.id]);
           } else {
             shares.add(share);
           }
@@ -919,19 +828,18 @@ class _HomePageState extends State<HomePage>
           try {
             input = await service.prepare(
               shares,
-              uploadDirectory: await drafts?.directoryFor('share-import'),
+              uploadDirectory: await drafts.directoryFor('share-import'),
             );
           } on ShareImportCancelled {
             await service.acknowledge(shares);
             continue;
           }
-          var accepted = false;
           var completed = false;
           try {
             if (!mounted) return;
             // Check the current draft at delivery time: preparing a large
             // attachment may take long enough for the user to keep typing.
-            accepted = await _controller.acceptIncomingShareDraft(
+            await _controller.acceptIncomingShareDraft(
               input,
               shareIds: shares.map((share) => share.id),
             );
@@ -939,8 +847,7 @@ class _HomePageState extends State<HomePage>
           } finally {
             // The durable store owns a separate copy; native delivery remains
             // unacknowledged if persistence failed.
-            if ((completed && drafts != null) ||
-                (drafts == null && !accepted)) {
+            if (completed) {
               await service.discardPrepared(input);
             }
           }
@@ -949,7 +856,7 @@ class _HomePageState extends State<HomePage>
           _showIncomingShareFailure();
         }
         await service.acknowledge(shares);
-        await drafts?.acknowledgeShares(shares.map((share) => share.id));
+        drafts.acknowledgeShares(shares.map((share) => share.id));
       }
     } on MissingPluginException {
       // The desktop/test host does not have a mobile incoming-share inbox.
@@ -1071,8 +978,7 @@ class _HomePageState extends State<HomePage>
       canToggleTemporaryConversation:
           _controller.canToggleTemporaryConversation,
       temporaryConversationEnabled: _controller.isTemporaryConversation,
-      onSelectModel: () =>
-          showModelSelectSheet(context, controller: _controller),
+      onSelectModel: () {},
       globalSearchMode: _controller.isGlobalSearchMode,
       globalSearchQuery: _controller.globalSearchQuery,
       onGlobalSearchQueryChanged: _controller.setGlobalSearchQuery,
@@ -1203,8 +1109,7 @@ class _HomePageState extends State<HomePage>
       onGlobalSearchQueryChanged: _controller.setGlobalSearchQuery,
       onOpenGlobalSearchResult: (convId, msgId) => _controller
           .openGlobalSearchResult(conversationId: convId, messageId: msgId),
-      onSelectModel: () =>
-          showModelSelectSheet(context, controller: _controller),
+      onSelectModel: () {},
       onSidebarWidthChanged: _controller.updateSidebarWidth,
       onSidebarWidthChangeEnd: _controller.saveSidebarWidth,
       onRightSidebarWidthChanged: _controller.updateRightSidebarWidth,
@@ -1401,12 +1306,12 @@ class _HomePageState extends State<HomePage>
             backgroundImageActive: _assistantBackgroundActive(context),
           )
         : null;
-    if (_controller.isTemporaryConversation &&
-        _controller.chatController.collapsedMessages.isEmpty) {
-      return _TemporaryConversationEmptyState(
+    if (_controller.chatController.collapsedMessages.isEmpty) {
+      return ChatEmptyStateSuggestions(
         topContentPadding: topContentPadding,
         bottomContentPadding: bottomContentPadding,
         footer: footer,
+        onSelectSuggestion: (prompt) => _controller.sendSuggestion(prompt),
       );
     }
 
@@ -1540,13 +1445,8 @@ class _HomePageState extends State<HomePage>
           ? AppLocalizations.of(context)!.messageEditPageSaveAndSend
           : null,
       onMore: _toggleTools,
-      onSelectModel: () =>
-          showModelSelectSheet(context, controller: _controller),
-      onLongPressSelectModel: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const ProvidersPage()));
-      },
+      onSelectModel: () {},
+      onLongPressSelectModel: () {},
       onOpenWorkspace: () {
         final a = context.read<AssistantProvider>().currentAssistant;
         if (PlatformUtils.isDesktop) {
@@ -1575,29 +1475,8 @@ class _HomePageState extends State<HomePage>
           assistant: assistant,
         );
       },
-      onOpenTools: () {
-        final a = context.read<AssistantProvider>().currentAssistant;
-        if (a == null) return;
-        if (PlatformUtils.isDesktop) {
-          showDesktopToolsPopover(
-            context,
-            anchorKey: _inputBarKey,
-            assistantId: a.id,
-          );
-        } else {
-          _controller.dismissKeyboard();
-          showChatToolsSheet(
-            context,
-            assistantId: a.id,
-            conversationId: _controller.currentConversation?.id,
-          );
-        }
-      },
-      onLongPressTools: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const McpPage()));
-      },
+      onOpenTools: () {},
+      onLongPressTools: () {},
       onOpenSearch: _openSearchSettings,
       onConfigureReasoning: () async {
         await _openReasoningSettings();
@@ -1619,12 +1498,8 @@ class _HomePageState extends State<HomePage>
       queuedPreviewText: _controller.currentQueuedInput?.input.text,
       onCancelQueuedInput: _controller.cancelQueuedMessage,
       onExpandedChanged: _controller.setInputBarExpanded,
-      onQuickPhrase: _showQuickPhraseMenu,
-      onLongPressQuickPhrase: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const QuickPhrasesPage()));
-      },
+      onQuickPhrase: null,
+      onLongPressQuickPhrase: null,
       onToggleOcr: () async {
         final sp = context.read<SettingsProvider>();
         await sp.setOcrEnabled(!sp.ocrEnabled);
@@ -1633,9 +1508,9 @@ class _HomePageState extends State<HomePage>
       onPickCamera: _controller.onPickCamera,
       onPickPhotos: _controller.onPickPhotos,
       onUploadFiles: _controller.onPickFiles,
-      onToggleLearningMode: _openInstructionInjectionPopover,
-      onOpenWorldBook: _openWorldBookPopover,
-      onLongPressLearning: _showLearningPromptSheet,
+      onToggleLearningMode: null,
+      onOpenWorldBook: null,
+      onLongPressLearning: null,
       onClearContext: _controller.clearContext,
       onCompressContext: _handleDesktopCompressContext,
       backgroundImageActive: _assistantBackgroundActive(context),
@@ -1643,64 +1518,7 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildScrollButtons() {
-    return Builder(
-      builder: (context) {
-        final settings = context.watch<SettingsProvider>();
-        if (_controller.selecting) return const SizedBox.shrink();
-        if (_controller.messages.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        var visible = _controller.scrollCtrl.showNavButtons;
-        var hoverEnabled = false;
-        if (_controller.isDesktopPlatform) {
-          switch (settings.desktopMessageNavButtonsMode) {
-            case DesktopMessageNavButtonsMode.always:
-              visible = true;
-              break;
-            case DesktopMessageNavButtonsMode.scroll:
-              visible = _controller.scrollCtrl.showNavButtons;
-              break;
-            case DesktopMessageNavButtonsMode.hover:
-              visible = _scrollNavHovering;
-              hoverEnabled = true;
-              break;
-            case DesktopMessageNavButtonsMode.scrollAndHover:
-              visible =
-                  _controller.scrollCtrl.showNavButtons || _scrollNavHovering;
-              hoverEnabled = true;
-              break;
-            case DesktopMessageNavButtonsMode.never:
-              return const SizedBox.shrink();
-          }
-        } else {
-          switch (settings.mobileMessageNavButtonsMode) {
-            case MobileMessageNavButtonsMode.always:
-              visible = true;
-              break;
-            case MobileMessageNavButtonsMode.scroll:
-              visible = _controller.scrollCtrl.showNavButtons;
-              break;
-            case MobileMessageNavButtonsMode.never:
-              return const SizedBox.shrink();
-          }
-        }
-        return ScrollNavButtonsPanel(
-          visible: visible,
-          hoverEnabled: hoverEnabled,
-          onHoverChanged: hoverEnabled
-              ? (hovering) {
-                  if (_scrollNavHovering == hovering) return;
-                  setState(() => _scrollNavHovering = hovering);
-                }
-              : null,
-          bottomOffset: _controller.inputBarHeight + 12,
-          onScrollToTop: () => _controller.scrollToTop(animate: false),
-          onPreviousMessage: _controller.jumpToPreviousQuestion,
-          onNextMessage: _controller.jumpToNextQuestion,
-          onScrollToBottom: _controller.forceScrollToBottom,
-        );
-      },
-    );
+    return const SizedBox.shrink();
   }
 
   Widget _buildForegroundOverlay(BuildContext context) {
@@ -1830,23 +1648,7 @@ class _HomePageState extends State<HomePage>
         assistant: context.read<AssistantProvider>().currentAssistant,
       );
 
-  void _openSearchSettings() {
-    final model = _resolvedChatModel();
-    if (PlatformUtils.isDesktop) {
-      showDesktopSearchProviderPopover(
-        context,
-        anchorKey: _inputBarKey,
-        chatModelProviderKey: model.providerKey,
-        chatModelId: model.modelId,
-      );
-    } else {
-      showSearchSettingsSheet(
-        context,
-        chatModelProviderKey: model.providerKey,
-        chatModelId: model.modelId,
-      );
-    }
-  }
+  void _openSearchSettings() {}
 
   Future<void> _openContextUsagePopover() async {
     final conversationId = _controller.currentConversation?.id;
@@ -1888,93 +1690,10 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  Future<void> _openInstructionInjectionPopover() async {
-    final isDesktop = PlatformUtils.isDesktop;
-    final assistantId = context.read<AssistantProvider>().currentAssistantId;
-    final provider = context.read<InstructionInjectionProvider>();
-    await provider.initialize();
-    if (!mounted) return;
-    final items = provider.items;
-    if (items.isEmpty) return;
-
-    final scoped =
-        context
-            .read<AssistantProvider>()
-            .currentAssistant
-            ?.allowConversationPromptInjection ??
-        false;
-    final scopeId = scoped
-        ? await ensureConversationId(
-            context,
-            conversationId: _controller.currentConversation?.id,
-            assistantId: assistantId,
-          )
-        : null;
-    if (!mounted || (scoped && scopeId == null)) return;
-    if (isDesktop) {
-      await showDesktopInstructionInjectionPopover(
-        context,
-        anchorKey: _inputBarKey,
-        items: items,
-        assistantId: assistantId,
-        conversationId: scopeId,
-      );
-    } else {
-      await showInstructionInjectionSheet(
-        context,
-        assistantId: assistantId,
-        conversationId: scopeId,
-      );
-    }
-  }
-
-  Future<void> _openWorldBookPopover() async {
-    final isDesktop = PlatformUtils.isDesktop;
-    final assistantId = context.read<AssistantProvider>().currentAssistantId;
-    final provider = context.read<WorldBookProvider>();
-    await provider.initialize();
-    if (!mounted) return;
-    final books = provider.books;
-    if (books.isEmpty) return;
-
-    final scoped =
-        context
-            .read<AssistantProvider>()
-            .currentAssistant
-            ?.allowConversationPromptInjection ??
-        false;
-    final scopeId = scoped
-        ? await ensureConversationId(
-            context,
-            conversationId: _controller.currentConversation?.id,
-            assistantId: assistantId,
-          )
-        : null;
-    if (!mounted || (scoped && scopeId == null)) return;
-    if (isDesktop) {
-      await showDesktopWorldBookPopover(
-        context,
-        anchorKey: _inputBarKey,
-        books: books,
-        assistantId: assistantId,
-        conversationId: scopeId,
-      );
-    } else {
-      await showWorldBookSheet(
-        context,
-        assistantId: assistantId,
-        conversationId: scopeId,
-      );
-    }
-  }
-
-  Future<void> _showLearningPromptSheet() async {
-    await showLearningPromptSheet(context);
-  }
-
   void _toggleTools() async {
     _controller.dismissKeyboard();
-    final assistantId = context.read<AssistantProvider>().currentAssistantId;
+    final l10n = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1983,34 +1702,48 @@ class _HomePageState extends State<HomePage>
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return ListenableBuilder(
-          listenable: _controller,
-          builder: (context, _) {
-            return SafeArea(
-              top: false,
-              child: BottomToolsSheet(
-                onPhotos: () {
-                  Navigator.of(ctx).maybePop();
-                  _controller.onPickPhotos();
-                },
-                onCamera: () {
-                  Navigator.of(ctx).maybePop();
-                  _controller.onPickCamera();
-                },
-                onUpload: () {
-                  Navigator.of(ctx).maybePop();
-                  _controller.onPickFiles();
-                },
-                onClear: () async {
-                  await Navigator.of(ctx).maybePop();
-                  _showContextManagementSheet();
-                },
-                assistantId: assistantId,
-                conversationId: _controller.currentConversation?.id,
-                onClose: () => Navigator.of(ctx).maybePop(),
-              ),
-            );
-          },
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: Icon(Lucide.Camera, color: cs.primary),
+                  title: Text(l10n.bottomToolsSheetCamera),
+                  onTap: () {
+                    Navigator.of(ctx).maybePop();
+                    _controller.onPickCamera();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Lucide.Image, color: cs.primary),
+                  title: Text(l10n.bottomToolsSheetPhotos),
+                  onTap: () {
+                    Navigator.of(ctx).maybePop();
+                    _controller.onPickPhotos();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Lucide.Upload, color: cs.primary),
+                  title: Text(l10n.bottomToolsSheetUpload),
+                  onTap: () {
+                    Navigator.of(ctx).maybePop();
+                    _controller.onPickFiles();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Lucide.Trash2, color: cs.error),
+                  title: Text(l10n.bottomToolsSheetClearContext),
+                  onTap: () async {
+                    await Navigator.of(ctx).maybePop();
+                    _showContextManagementSheet();
+                  },
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -2100,47 +1833,6 @@ class _HomePageState extends State<HomePage>
         type: NotificationType.error,
         duration: const Duration(seconds: 6),
       );
-    }
-  }
-
-  Future<void> _showQuickPhraseMenu() async {
-    final assistant = context.read<AssistantProvider>().currentAssistant;
-    final quickPhraseProvider = context.read<QuickPhraseProvider>();
-    final globalPhrases = quickPhraseProvider.globalPhrases;
-    final assistantPhrases = assistant != null
-        ? quickPhraseProvider.getForAssistant(assistant.id)
-        : <QuickPhrase>[];
-
-    final allAvailable = [...globalPhrases, ...assistantPhrases];
-    if (allAvailable.isEmpty) return;
-
-    final RenderBox? inputBox =
-        _inputBarKey.currentContext?.findRenderObject() as RenderBox?;
-    if (inputBox == null) return;
-
-    final inputBarHeight = inputBox.size.height;
-    final topLeft = inputBox.localToGlobal(Offset.zero);
-    final position = Offset(topLeft.dx, inputBarHeight);
-
-    _controller.dismissKeyboard();
-
-    QuickPhrase? selected;
-    if (PlatformUtils.isDesktop) {
-      selected = await showDesktopQuickPhrasePopover(
-        context,
-        anchorKey: _inputBarKey,
-        phrases: allAvailable,
-      );
-    } else {
-      selected = await showQuickPhraseMenu(
-        context: context,
-        phrases: allAvailable,
-        position: position,
-      );
-    }
-
-    if (selected != null && mounted) {
-      await _controller.handleQuickPhraseSelection(selected);
     }
   }
 

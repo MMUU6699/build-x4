@@ -29,10 +29,12 @@ class _VersionService extends ChatService {
       Map.of(selected);
   @override
   Future<List<ChatMessage>> loadMessageVersionHeaders(
-    String conversationId,
-    Iterable<String> groupIds,
-  ) async => [
-    for (final m in versions.where((m) => groupIds.contains(m.groupId)))
+    String conversationId, [
+    Iterable<String>? groupIds,
+  ]) async => [
+    for (final m in versions.where(
+      (m) => (groupIds ?? const []).contains(m.groupId),
+    ))
       m.copyWith(content: ''),
   ];
   @override
@@ -47,13 +49,16 @@ class _VersionService extends ChatService {
   }
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) async {
     final messages = versions
         .where(
@@ -72,13 +77,9 @@ class _VersionService extends ChatService {
           LoadedTimelineSlot(
             message: m,
             identity: ActiveTimelineSlot(
-              slotId: m.groupId!,
               revisionId: m.id,
-              parentRevisionId: null,
-              role: m.role,
-              createdAt: m.timestamp,
-              updatedAt: m.timestamp,
-              finalizedAt: m.timestamp,
+              groupId: m.groupId!,
+              version: m.version,
               versionCount: 2,
               logicalIndex: m.groupId == 'a' ? 0 : 1,
             ),

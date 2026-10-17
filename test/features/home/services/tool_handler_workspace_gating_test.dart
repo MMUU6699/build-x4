@@ -58,12 +58,8 @@ void main() {
   testWidgets('workspace tools appear only when a context is passed', (
     tester,
   ) async {
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
-    final mcpProvider = McpProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
+    final mcpProvider = McpProvider();
     final settings = SettingsProvider(createBusinessTestPreferences());
     addTearDown(assistants.dispose);
     addTearDown(mcpProvider.dispose);
@@ -75,7 +71,7 @@ void main() {
         providers: [
           ChangeNotifierProvider<AssistantProvider>.value(value: assistants),
           ChangeNotifierProvider<McpProvider>.value(value: mcpProvider),
-          ChangeNotifierProvider<McpToolService>.value(value: McpToolService()),
+          Provider<McpToolService>.value(value: McpToolService()),
         ],
         child: const SizedBox.shrink(),
       ),
@@ -92,10 +88,9 @@ void main() {
     final without = service.buildToolDefinitions(
       settings,
       assistant,
-      'openai',
-      'gpt-4.1',
+      'mistral',
+      'mistral-medium-latest',
       false,
-      isToolModel: (_, __) => true,
     );
     expect(
       without.map(nameOf),
@@ -108,38 +103,12 @@ void main() {
     final withCtx = service.buildToolDefinitions(
       settings,
       assistant,
-      'openai',
-      'gpt-4.1',
+      'mistral',
+      'mistral-medium-latest',
       false,
-      isToolModel: (_, __) => true,
       workspaceContext: context(),
     );
     expect(withCtx.map(nameOf), containsAll(WorkspaceToolsService.toolNames));
-
-    final textOnly = service.buildToolDefinitions(
-      settings,
-      assistant,
-      'openai',
-      'gpt',
-      false,
-      isToolModel: (_, __) => true,
-      workspaceContext: context(),
-    );
-    expect(textOnly.map(nameOf), isNot(contains('view_image')));
-    expect(textOnly.map(nameOf), contains('read_file'));
-
-    final noTools = service.buildToolDefinitions(
-      settings,
-      assistant,
-      'openai',
-      'gpt',
-      false,
-      isToolModel: (_, __) => false,
-      workspaceContext: context(),
-    );
-    for (final name in WorkspaceToolsService.toolNames) {
-      expect(noTools.map(nameOf), isNot(contains(name)));
-    }
   });
 
   test('workspace tool names are reserved in BuiltInToolNames.all', () {

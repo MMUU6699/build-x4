@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:Kelivo/core/database/business_preferences.dart';
+import 'package:Kelivo/core/services/preferences/app_preferences.dart';
 import 'package:Kelivo/features/chat/pages/image_viewer_page.dart';
 import 'package:Kelivo/shared/widgets/markdown_line_lexer.dart';
 import 'package:Kelivo/shared/widgets/markdown_with_highlight.dart';

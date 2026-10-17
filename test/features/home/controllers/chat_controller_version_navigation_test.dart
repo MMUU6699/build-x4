@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 // ignore: depend_on_referenced_packages
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
@@ -75,8 +74,7 @@ void main() {
       service.hydrationGate!.complete();
     }
     controller.dispose();
-    await service.close();
-    await Hive.close();
+    service.dispose();
     PathProviderPlatform.instance = paths;
     SandboxPathResolver.debugSetDirs(docsDir: null, supportDir: null);
     await directory.delete(recursive: true);
@@ -103,7 +101,7 @@ void main() {
         final v1 = (await service.appendMessageVersion(
           messageId: v0.id,
           content: 'edited body',
-        ))!;
+        ));
         final neighbor = await service.addMessage(
           conversationId: conversation.id,
           role: 'user',
@@ -156,7 +154,7 @@ void main() {
       final v1 = (await service.appendMessageVersion(
         messageId: v0.id,
         content: 'edited',
-      ))!;
+      ));
       await controller.setCurrentConversationAndLoad(
         service.getConversation(conversation.id),
       );
@@ -212,7 +210,7 @@ void main() {
       final v1 = (await service.appendMessageVersion(
         messageId: v0.id,
         content: 'edited body',
-      ))!;
+      ));
       final after = await service.addMessage(
         conversationId: conversation.id,
         role: 'user',
@@ -231,7 +229,7 @@ void main() {
           conversation.id,
           beforeRevisionId: v1.id,
           limit: 1,
-        ))!.slots.single.message.id,
+        )).slots.single.message.id,
         before.id,
       );
       expect(
@@ -239,7 +237,7 @@ void main() {
           conversation.id,
           afterRevisionId: v1.id,
           limit: 1,
-        ))!.slots.single.message.id,
+        )).slots.single.message.id,
         after.id,
       );
       await controller.setSelectedVersion(v0.id, 1);
@@ -266,7 +264,7 @@ void main() {
       final v1 = (await service.appendMessageVersion(
         messageId: v0Id,
         content: 'edited 70',
-      ))!;
+      ));
       await controller.setCurrentConversationAndLoad(
         service.getConversation(conversation.id),
       );

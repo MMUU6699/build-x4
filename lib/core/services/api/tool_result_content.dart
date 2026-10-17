@@ -1,9 +1,8 @@
 import '../../../utils/mcp_structured_image.dart';
-import '../mcp/mcp_image_snapshot.dart';
 
 import 'chat_api_helpers.dart';
 
-/// Reads typed MCP images and successful view_image snapshots from metadata.
+/// Reads typed images and successful view_image snapshots from metadata.
 /// Tool text, including rejected paths in errors, never authorizes file reads.
 class ToolResultContent {
   const ToolResultContent(this.text, [this.imageUrls = const []]);
@@ -39,9 +38,7 @@ class ToolResultContent {
     }
     final urls = <String>[];
     for (final uri in imageUris) {
-      final url = workspace == null
-          ? await McpImageSnapshot.readDataUrl(uri)
-          : await tryEncodeBase64DataUrl(uri);
+      final url = await tryEncodeBase64DataUrl(uri);
       if (url != null) urls.add(url);
     }
     return ToolResultContent(

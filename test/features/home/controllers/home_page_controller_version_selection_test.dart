@@ -1,72 +1,19 @@
 import 'dart:async';
-import 'dart:io';
 
 import '../../../support/business_test_harness.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-// ignore: depend_on_referenced_packages
-import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:provider/provider.dart';
 
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/chat_database_repository.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
-import 'package:Kelivo/features/home/controllers/chat_controller.dart';
 import 'package:Kelivo/features/home/controllers/home_page_controller.dart';
 import 'package:Kelivo/features/home/controllers/scroll_controller.dart';
 import 'package:Kelivo/features/home/widgets/chat_input_bar.dart';
 import 'package:Kelivo/features/home/widgets/chat_selection_delete_bar.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
-import 'package:Kelivo/utils/app_directories.dart';
-
-class _FakePathProviderPlatform extends PathProviderPlatform {
-  _FakePathProviderPlatform(this.path);
-
-  final String path;
-
-  @override
-  Future<String?> getApplicationDocumentsPath() async => path;
-
-  @override
-  Future<String?> getApplicationSupportPath() async => path;
-
-  @override
-  Future<String?> getApplicationCachePath() async => '$path/cache';
-
-  @override
-  Future<String?> getTemporaryPath() async => '$path/tmp';
-}
-
-class _SpyChatDatabaseRepository extends ChatDatabaseRepository {
-  _SpyChatDatabaseRepository(super.db, {super.databaseFile});
-
-  Completer<void>? gateMessageIds;
-  int getMessageIdsCalls = 0;
-  final List<({int start, int limit})> rangeQueries =
-      <({int start, int limit})>[];
-
-  @override
-  Future<List<String>> getMessageIds(String conversationId) async {
-    getMessageIdsCalls += 1;
-    final gate = gateMessageIds;
-    if (gate != null) await gate.future;
-    return super.getMessageIds(conversationId);
-  }
-
-  @override
-  Future<List<ChatMessage>> getMessagesRange(
-    String conversationId, {
-    required int start,
-    required int limit,
-  }) async {
-    rangeQueries.add((start: start, limit: limit));
-    return super.getMessagesRange(conversationId, start: start, limit: limit);
-  }
-}
 
 class _SelectionFakeChatService extends ChatService {
   _SelectionFakeChatService({
@@ -116,16 +63,13 @@ class _SelectionFakeChatService extends ChatService {
   @override
   bool isMessageCountKnown(String conversationId) => false;
 
-  @override
   bool debugHasMessageOrderSkeleton(String conversationId) => false;
 
-  @override
   Future<List<String>> getMessageIds(String conversationId) async {
     getMessageIdsCalls += 1;
     return _messages.map((m) => m.id).toList(growable: false);
   }
 
-  @override
   List<ChatMessage> getMessagesRange(
     String conversationId, {
     required int start,
@@ -138,45 +82,44 @@ class _SelectionFakeChatService extends ChatService {
   }
 
   @override
-  Future<List<ChatMessage>> loadMessages(String conversationId) async {
+  Future<List<ChatMessage>> loadMessages(
+    String conversationId, {
+    int? limit,
+    int? offset,
+    bool includeFollowingAssistant = false,
+    String? throughRevisionId,
+  }) async {
     fullLoadCalls += 1;
     return List<ChatMessage>.of(_messages);
   }
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) async {
-    final grouped = <String, List<ChatMessage>>{};
-    for (final message in _messages) {
-      grouped.putIfAbsent(message.groupId ?? message.id, () => []).add(message);
-    }
+    final effectiveLimit = limit ?? 40;
     final active = _activeProjections();
-    final start = (active.length - limit).clamp(0, active.length);
+    final start = (active.length - effectiveLimit).clamp(0, active.length);
     final selected = active.sublist(start);
-    final timestamp = DateTime(2026, 8, 10);
     return LoadedTimelinePage(
       conversationId: conversationId,
       stateRevision: 0,
       contextStartRevisionId: null,
       slots: [
-        for (final (offset, message) in selected.indexed)
+        for (final message in selected)
           LoadedTimelineSlot(
             identity: ActiveTimelineSlot(
-              slotId: message.groupId ?? message.id,
               revisionId: message.id,
-              parentRevisionId: null,
-              role: message.role,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-              finalizedAt: timestamp,
-              versionCount: grouped[message.groupId ?? message.id]!.length,
-              logicalIndex: start + offset,
+              groupId: message.groupId ?? message.id,
+              version: message.version,
             ),
             message: message,
           ),
@@ -191,7 +134,6 @@ class _SelectionFakeChatService extends ChatService {
   Map<String, int> getVersionSelections(String conversationId) =>
       Map<String, int>.from(versionSelections);
 
-  @override
   List<ChatMessage> getMessagesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -208,13 +150,11 @@ class _SelectionFakeChatService extends ChatService {
     Iterable<String> groupIds,
   ) async => getMessagesForGroups(conversationId, groupIds);
 
-  @override
   Map<String, int> getFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
   ) => {for (final id in groupIds) id: 0};
 
-  @override
   Future<Map<String, int>> loadFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -227,14 +167,15 @@ class _SelectionFakeChatService extends ChatService {
   }
 
   @override
-  Future<Set<String>> loadMessageIdsForGroups(
+  Future<List<String>> loadMessageIdsForGroups(
     String conversationId,
-    Set<String> groupIds,
+    Iterable<String> groupIds,
   ) async {
-    return {
+    final targets = groupIds.toSet();
+    return [
       for (final message in _messages)
-        if (groupIds.contains(message.groupId ?? message.id)) message.id,
-    };
+        if (targets.contains(message.groupId ?? message.id)) message.id,
+    ];
   }
 
   @override
@@ -251,8 +192,8 @@ class _SelectionFakeChatService extends ChatService {
   @override
   Future<Set<String>> deleteMessages({
     required String conversationId,
-    required Set<String> messageIds,
-    required Map<String, int?> versionSelectionChanges,
+    required Iterable<String> messageIds,
+    Map<String, dynamic>? versionSelectionChanges,
   }) async {
     lastDeletedIds = Set<String>.of(messageIds);
     return lastDeletedIds!;
@@ -696,128 +637,6 @@ void main() {
         expect(controller!.allSelectableMessagesSelected, isFalse);
 
         await tester.pumpWidget(const SizedBox.shrink());
-      },
-    );
-  });
-
-  group('selection with getMessageIds gate held', () {
-    late Directory tempDir;
-    final services = <ChatService>[];
-    final repositories = <_SpyChatDatabaseRepository>[];
-
-    setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp(
-        'kelivo_version_selection_gate_',
-      );
-      PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
-    });
-
-    tearDown(() async {
-      for (final repository in repositories) {
-        final gate = repository.gateMessageIds;
-        if (gate != null && !gate.isCompleted) gate.complete();
-      }
-      for (final service in services) {
-        await service.close();
-      }
-      services.clear();
-      for (final repository in repositories) {
-        await repository.close();
-      }
-      repositories.clear();
-      await Hive.close();
-      if (await tempDir.exists()) {
-        await tempDir.delete(recursive: true);
-      }
-    });
-
-    Future<File> databaseFile() async {
-      final appDataDir = await AppDirectories.getAppDataDirectory();
-      return File('${appDataDir.path}/${AppDatabase.databaseFileName}');
-    }
-
-    test(
-      'after window+group preload, multi-version selection works while order gated',
-      () async {
-        final writer = ChatService();
-        services.add(writer);
-        await writer.init();
-        final conversation = await writer.createConversation(title: 'Gated');
-        await writer.addMessage(
-          conversationId: conversation.id,
-          role: 'user',
-          content: 'prompt',
-        );
-        await writer.addMessage(
-          conversationId: conversation.id,
-          role: 'assistant',
-          content: 'v0',
-          groupId: 'answer',
-          version: 0,
-        );
-        final v1 = await writer.addMessage(
-          conversationId: conversation.id,
-          role: 'assistant',
-          content: 'v1',
-          groupId: 'answer',
-          version: 1,
-        );
-        await writer.setSelectedVersion(conversation.id, 'answer', 1);
-        await writer.close();
-        services.remove(writer);
-
-        final file = await databaseFile();
-        final spy = _SpyChatDatabaseRepository(
-          AppDatabase.open(file: file),
-          databaseFile: file,
-        );
-        await spy.ensureReady();
-        repositories.add(spy);
-        spy.gateMessageIds = Completer<void>();
-
-        final service = ChatService(existingRepository: spy);
-        services.add(service);
-        await service.init();
-
-        // Use ChatController directly: HomePageController's widget harness can
-        // pump idle frames that start the gated getMessageIds backfill and then
-        // deadlock tearDown. Selection UI semantics are covered by the Fake
-        // tests above; this case proves the real DB path under an order gate.
-        final chatController = ChatController(chatService: service);
-        addTearDown(chatController.dispose);
-
-        await chatController
-            .setCurrentConversationAndLoad(
-              service.getConversation(conversation.id)!,
-            )
-            .timeout(const Duration(seconds: 5));
-
-        expect(spy.getMessageIdsCalls, 0);
-        expect(service.debugHasMessageOrderSkeleton(conversation.id), isFalse);
-        expect(chatController.collapsedMessages.map((m) => m.id).last, v1.id);
-
-        final collapsed = chatController
-            .allCollapsedMessagesForCurrentConversation();
-        expect(collapsed.map((m) => m.id).last, v1.id);
-
-        // The picker gets revision headers; browsing does not load the
-        // unselected body or the full order skeleton.
-        final groupMessages = chatController.groupedMessages['answer']!;
-        expect(
-          service.getMessagesForGroups(conversation.id, ['answer']),
-          hasLength(1),
-        );
-        expect(
-          groupMessages.firstWhere((m) => m.version == 0).content,
-          isEmpty,
-        );
-        expect(groupMessages.length, 2);
-        expect(groupMessages.any((m) => m.id == v1.id), isTrue);
-        expect(spy.rangeQueries.where((q) => q.limit < 0), isEmpty);
-        expect(spy.getMessageIdsCalls, 0);
-        expect(service.debugHasMessageOrderSkeleton(conversation.id), isFalse);
-
-        spy.gateMessageIds!.complete();
       },
     );
   });

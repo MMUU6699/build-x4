@@ -2,8 +2,7 @@ import 'dart:convert';
 
 import 'package:Kelivo/core/models/message_part.dart';
 import 'package:Kelivo/core/models/token_usage.dart';
-import 'package:Kelivo/core/services/api/providers/openai/chat_completions_decoder.dart';
-import 'package:Kelivo/core/services/api/stream/sse_event.dart';
+import 'package:Kelivo/core/services/api/stream/stream_chunk_ids.dart';
 import 'package:Kelivo/core/services/api/generation/text_generation_result.dart';
 import 'package:Kelivo/core/services/api/stream/stream_chunk.dart';
 import 'package:Kelivo/core/services/api/stream/stream_chunk_handler.dart';
@@ -518,43 +517,17 @@ void main() {
     'keeps follow-up round text as a new part when decoder ids are scoped',
     () {
       final handler = StreamChunkHandler();
-      final round1 = ChatCompletionsStreamDecoder(sourceId: 'round-0');
-      final round2 = ChatCompletionsStreamDecoder(sourceId: 'round-1');
+      final ids1 = StreamChunkIds('round-0');
+      final ids2 = StreamChunkIds('round-1');
 
-      for (final chunk
-          in round1
-              .accept(
-                SseEvent(
-                  data: jsonEncode({
-                    'choices': [
-                      {
-                        'delta': {'content': 'before'},
-                      },
-                    ],
-                  }),
-                ),
-              )
-              .chunks) {
-        handler.handle(chunk);
-      }
+      handler.handle(TextStart(ids1.text()));
+      handler.handle(TextDelta(id: ids1.text(), text: 'before'));
+      handler.handle(TextEnd(ids1.text()));
       handler.handle(const ToolCallStart(id: 'call_1', toolName: 'lookup'));
       handler.handle(const ToolCallEnd('call_1'));
-      for (final chunk
-          in round2
-              .accept(
-                SseEvent(
-                  data: jsonEncode({
-                    'choices': [
-                      {
-                        'delta': {'content': 'after'},
-                      },
-                    ],
-                  }),
-                ),
-              )
-              .chunks) {
-        handler.handle(chunk);
-      }
+      handler.handle(TextStart(ids2.text()));
+      handler.handle(TextDelta(id: ids2.text(), text: 'after'));
+      handler.handle(TextEnd(ids2.text()));
 
       expect(handler.parts.map((p) => p.kind).toList(), [
         'text',
@@ -568,43 +541,17 @@ void main() {
 
   test('merges follow-up text when two decoders share a sourceId', () {
     final handler = StreamChunkHandler();
-    final round1 = ChatCompletionsStreamDecoder(sourceId: 'stream');
-    final round2 = ChatCompletionsStreamDecoder(sourceId: 'stream');
+    final ids1 = StreamChunkIds('stream');
+    final ids2 = StreamChunkIds('stream');
 
-    for (final chunk
-        in round1
-            .accept(
-              SseEvent(
-                data: jsonEncode({
-                  'choices': [
-                    {
-                      'delta': {'content': 'before'},
-                    },
-                  ],
-                }),
-              ),
-            )
-            .chunks) {
-      handler.handle(chunk);
-    }
+    handler.handle(TextStart(ids1.text()));
+    handler.handle(TextDelta(id: ids1.text(), text: 'before'));
+    handler.handle(TextEnd(ids1.text()));
     handler.handle(const ToolCallStart(id: 'call_1', toolName: 'lookup'));
     handler.handle(const ToolCallEnd('call_1'));
-    for (final chunk
-        in round2
-            .accept(
-              SseEvent(
-                data: jsonEncode({
-                  'choices': [
-                    {
-                      'delta': {'content': 'after'},
-                    },
-                  ],
-                }),
-              ),
-            )
-            .chunks) {
-      handler.handle(chunk);
-    }
+    handler.handle(TextStart(ids2.text()));
+    handler.handle(TextDelta(id: ids2.text(), text: 'after'));
+    handler.handle(TextEnd(ids2.text()));
 
     expect(handler.parts.map((p) => p.kind).toList(), ['text', 'tool_call']);
     expect((handler.parts[0] as TextPart).text, 'beforeafter');

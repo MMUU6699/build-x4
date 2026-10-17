@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:Kelivo/core/database/chat_database_repository.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/models/model_spec.dart';
@@ -398,58 +397,6 @@ void main() {
       expect(snapshot.assistantRank.single.label, 'Active Assistant');
     });
 
-    test(
-      'database snapshot merges duplicate assistant names and hides stale ids',
-      () {
-        final snapshot = StatsAggregationService.buildDatabaseSnapshot(
-          now: now,
-          range: StatsDateRange.allTime(now),
-          aggregate: const ChatStatsAggregate(
-            conversations: 10,
-            totals: ChatStatsTotals(
-              messages: 0,
-              inputTokens: 0,
-              outputTokens: 0,
-              cachedTokens: 0,
-            ),
-            heatmap: [],
-            trend: [],
-            models: [],
-            assistants: [
-              ChatStatsRank(id: '_default', label: '_default', count: 2),
-              ChatStatsRank(id: 'default-id', label: 'default-id', count: 3),
-              ChatStatsRank(id: 'research-1', label: 'research-1', count: 1),
-              ChatStatsRank(id: 'research-2', label: 'research-2', count: 2),
-              ChatStatsRank(
-                id: '2d111bb3-de7b-4ad6-903d-e09cefd7c933',
-                label: '2d111bb3-de7b-4ad6-903d-e09cefd7c933',
-                count: 2,
-              ),
-            ],
-            topics: [],
-          ),
-          launchCount: 1,
-          unknownProviderLabel: 'Unknown provider',
-          unknownTopicLabel: 'Untitled topic',
-          assistantNames: const {
-            '_default': 'Default Assistant',
-            'default-id': 'Default Assistant',
-            'research-1': 'Research',
-            'research-2': 'Research',
-          },
-        );
-
-        expect(snapshot.assistantRank.map((item) => (item.label, item.value)), [
-          ('Default Assistant', 5),
-          ('Research', 3),
-        ]);
-        expect(
-          snapshot.assistantRank.map((item) => item.label),
-          isNot(contains('2d111bb3-de7b-4ad6-903d-e09cefd7c933')),
-        );
-      },
-    );
-
     test('uses total tokens as trend fallback for legacy messages', () {
       final conversations = [
         conversation(
@@ -632,61 +579,5 @@ void main() {
         expect(snapshot.summary.modelsWithoutPricing, 1);
       },
     );
-
-    test('database snapshot prices models from rank token totals', () {
-      final snapshot = StatsAggregationService.buildDatabaseSnapshot(
-        now: now,
-        range: StatsDateRange.allTime(now),
-        aggregate: const ChatStatsAggregate(
-          conversations: 1,
-          totals: ChatStatsTotals(
-            messages: 3,
-            inputTokens: 3000000,
-            outputTokens: 2000000,
-            cachedTokens: 500000,
-          ),
-          heatmap: [],
-          trend: [],
-          models: [
-            ChatStatsRank(
-              id: 'gpt-priced',
-              label: 'gpt-priced',
-              count: 2,
-              providerId: 'openai',
-              inputTokens: 2000000,
-              outputTokens: 1000000,
-              cachedTokens: 500000,
-              cacheWriteTokens: 0,
-            ),
-            ChatStatsRank(
-              id: 'local-free',
-              label: 'local-free',
-              count: 1,
-              providerId: 'ollama',
-              inputTokens: 1000000,
-              outputTokens: 1000000,
-            ),
-          ],
-          assistants: [],
-          topics: [],
-        ),
-        launchCount: 1,
-        unknownProviderLabel: 'Unknown provider',
-        unknownTopicLabel: 'Untitled topic',
-        resolvePricing: (providerKey, modelId) {
-          if (providerKey == 'openai' && modelId == 'gpt-priced') {
-            return const ModelPricing(input: 1, output: 3);
-          }
-          return null;
-        },
-      );
-
-      expect(
-        snapshot.modelRank.singleWhere((item) => item.id == 'gpt-priced').cost,
-        const ModelCost(amount: 5, currency: 'USD'),
-      );
-      expect(snapshot.summary.costByCurrency, {'USD': 5});
-      expect(snapshot.summary.modelsWithoutPricing, 1);
-    });
   });
 }

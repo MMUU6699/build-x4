@@ -3,6 +3,7 @@ import 'dart:async';
 /// App-wide hotkey actions broadcast bus.
 enum HotkeyAction {
   toggleAppVisibility,
+  showOrHideWindow,
   closeWindow,
   openSettings,
   newTopic,

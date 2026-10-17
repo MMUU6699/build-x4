@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  app_links
   audioplayers_windows
   bitsdojo_window_windows
   desktop_drop
@@ -25,7 +26,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   jni
-  sherpa_onnx_windows
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

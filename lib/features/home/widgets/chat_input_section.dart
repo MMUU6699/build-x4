@@ -1,4 +1,3 @@
-import 'package:Kelivo/features/chat/utils/prompt_injection_selection.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,13 +11,8 @@ import '../../../core/services/api/reasoning/reasoning_selection.dart';
 import '../../../core/services/model_spec/model_spec_resolver.dart';
 import '../../../core/models/workspace_binding.dart';
 import '../../../core/models/skills_binding.dart';
-import '../../../core/providers/asr_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/assistant_provider.dart';
-import '../../../core/providers/mcp_provider.dart';
-import '../../../core/providers/quick_phrase_provider.dart';
-import '../../../core/providers/world_book_provider.dart';
-import '../../../core/providers/instruction_injection_provider.dart';
 import '../../../core/services/chat/chat_service.dart';
 import '../../../core/services/skills/skills_service.dart';
 import '../../../features/workspace/widgets/environment/environment_status_chip.dart';
@@ -152,7 +146,6 @@ class ChatInputSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
-    final asr = context.watch<AsrProvider>();
     final ap = context.watch<AssistantProvider>();
     final a = ap.currentAssistant;
 
@@ -177,8 +170,6 @@ class ChatInputSection extends StatelessWidget {
     }
 
     final isDesktop = _isDesktopPlatform(context);
-    final hasWorldBooks =
-        isTablet && context.watch<WorldBookProvider>().books.isNotEmpty;
     final showWorkspaceButton = isDesktop && onOpenWorkspace != null;
     final showEnvChip = !isDesktop && (Platform.isAndroid || Platform.isIOS);
     var workspaceBound = false;
@@ -215,7 +206,7 @@ class ChatInputSection extends StatelessWidget {
       focusNode: inputFocus,
       controller: inputController,
       mediaController: mediaController,
-      asrProvider: asr,
+      asrProvider: null,
       onConfigureReasoning: onConfigureReasoning,
       onOpenContextUsage: onOpenContextUsage,
       reasoningActive: isReasoningEnabled(effectiveReasoning),
@@ -253,15 +244,9 @@ class ChatInputSection extends StatelessWidget {
       onPickCamera: isTablet ? (isDesktop ? null : onPickCamera) : null,
       onPickPhotos: isTablet ? (isDesktop ? null : onPickPhotos) : null,
       onUploadFiles: isTablet ? onUploadFiles : null,
-      onToggleLearningMode: isTablet ? onToggleLearningMode : null,
-      onOpenWorldBook: hasWorldBooks ? onOpenWorldBook : null,
-      onLongPressLearning: isTablet ? onLongPressLearning : null,
-      learningModeActive:
-          isTablet &&
-          _isPromptSelectionActive(context, a, PromptSelectionKind.instruction),
-      worldBookActive:
-          isTablet &&
-          _isPromptSelectionActive(context, a, PromptSelectionKind.worldBook),
+      onOpenWorldBook: null,
+      learningModeActive: false,
+      worldBookActive: false,
       showMoreButton: !isTablet,
       onClearContext: isTablet ? onClearContext : null,
       onCompressContext: isTablet ? onCompressContext : null,
@@ -290,28 +275,6 @@ class ChatInputSection extends StatelessWidget {
         Flexible(child: bar),
       ],
     );
-  }
-
-  bool _isPromptSelectionActive(
-    BuildContext context,
-    Assistant? assistant,
-    PromptSelectionKind kind,
-  ) {
-    final scoped = assistant?.allowConversationPromptInjection == true;
-    if (scoped && conversationId == null) return false;
-    final ids = promptSelectionIds(
-      context,
-      kind: kind,
-      assistantId: assistant?.id,
-      conversationId: scoped ? conversationId : null,
-    ).toSet();
-    return kind == PromptSelectionKind.worldBook
-        ? context.watch<WorldBookProvider>().books.any(
-            (book) => book.enabled && ids.contains(book.id),
-          )
-        : context.watch<InstructionInjectionProvider>().items.any(
-            (item) => ids.contains(item.id),
-          );
   }
 
   bool _isSkillsActive(BuildContext context, Assistant? assistant) {
@@ -356,19 +319,7 @@ class ChatInputSection extends StatelessWidget {
     Assistant? a,
     String? pk,
     String? mid,
-  ) {
-    if (pk == null || mid == null) return;
-
-    final supportsTools = isToolModel(pk, mid);
-    if (!supportsTools && (a?.mcpServerIds.isNotEmpty ?? false)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final aa = ap.currentAssistant;
-        if (aa != null && aa.mcpServerIds.isNotEmpty) {
-          ap.updateAssistant(aa.copyWith(mcpServerIds: const <String>[]));
-        }
-      });
-    }
-  }
+  ) {}
 
   ReasoningRequest _selectedReasoning(
     SettingsProvider settings,
@@ -395,20 +346,10 @@ class ChatInputSection extends StatelessWidget {
   }
 
   bool _isToolsActive(BuildContext context, Assistant? a, bool workspaceBound) {
-    if (workspaceBound) return true;
-    if ((a?.localToolIds ?? const <String>[]).isNotEmpty) return true;
-    final connected = context.watch<McpProvider>().connectedServers;
-    final selected = a?.mcpServerIds ?? const <String>[];
-    if (selected.isEmpty || connected.isEmpty) return false;
-    return connected.any((s) => selected.contains(s.id));
+    return workspaceBound || (a?.localToolIds ?? const <String>[]).isNotEmpty;
   }
 
   bool _hasQuickPhrases(BuildContext context, Assistant? a) {
-    final quickPhraseProvider = context.watch<QuickPhraseProvider>();
-    final globalCount = quickPhraseProvider.globalPhrases.length;
-    final assistantCount = a != null
-        ? quickPhraseProvider.getForAssistant(a.id).length
-        : 0;
-    return (globalCount + assistantCount) > 0;
+    return false;
   }
 }

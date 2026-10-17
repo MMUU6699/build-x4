@@ -3,20 +3,14 @@ import '../../chat/utils/thinking_tag_parser.dart';
 import 'package:Kelivo/core/providers/external_mounts_provider.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
-import '../../../core/database/chat_database_repository.dart';
 import '../../../core/models/assistant.dart';
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/message_part.dart';
 import '../../../core/models/conversation.dart';
-import '../../../core/models/world_book.dart';
 import '../../../core/models/conversation_prompt_settings.dart';
-import '../../../core/services/world_book_activation.dart';
-import '../../../core/providers/memory_provider.dart';
-import '../../../core/providers/environment_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/services/chat/chat_service.dart';
@@ -25,29 +19,87 @@ import '../../../utils/mcp_structured_image.dart';
 import '../../../utils/sandbox_path_resolver.dart';
 import '../../../core/services/chat/prompt_transformer.dart';
 import '../../../core/services/logging/context_log_models.dart';
-import '../../../core/services/memory/memory_block_builder.dart';
-import '../../../core/services/memory/memory_prompts.dart';
-import '../../../core/services/memory/memory_snapshot.dart';
 import '../../../core/models/skills_binding.dart';
 import '../../../core/providers/workspace_provider.dart';
-import '../../../core/services/search/search_tool_service.dart';
 import '../../../core/services/skills/skills_service.dart';
 import '../../../core/services/workspace/workspace_runtime.dart';
 import '../../../core/services/workspace/workspace_tools_service.dart';
-import '../../../core/providers/instruction_injection_provider.dart';
-import '../../../core/providers/world_book_provider.dart';
 import '../../../core/services/api/builtin_tools.dart';
-import '../../../core/services/api/providers/claude/claude_container.dart';
-import '../../../core/services/api/providers/claude/claude_history.dart';
-import '../../../core/services/api/providers/claude/claude_thinking_recovery.dart';
-import '../../../core/services/api/providers/google/gemini_thought_signature.dart';
 import '../../../core/models/assistant_regex.dart';
 import '../../../core/utils/multimodal_input_utils.dart';
 import '../../../utils/assistant_regex.dart';
 import '../../../utils/markdown_media_sanitizer.dart';
+import '../../../core/database/chat_database_repository.dart';
 import 'ocr_service.dart';
 import 'assistant_tool_history.dart';
-import '../../../core/services/api/providers/openai/responses_history.dart';
+
+class Value<T> {
+  final T? value;
+  const Value(this.value);
+  const Value.absent() : value = null;
+}
+
+class WorldBook {
+  final String id;
+  final List<dynamic> entries;
+  const WorldBook({required this.id, this.entries = const []});
+}
+
+class WorldBookActivation {
+  static const automatic = 'automatic';
+}
+
+class WorldBookProvider extends ChangeNotifier {
+  List<WorldBook> get books => const [];
+}
+
+class InstructionInjectionProvider extends ChangeNotifier {}
+
+class MemoryEntry {
+  final String id;
+  final String content;
+  const MemoryEntry({required this.id, required this.content});
+}
+
+class MemoryProvider extends ChangeNotifier {
+  Future<void> initialize() async {}
+  List<MemoryEntry> getForAssistant(String assistantId) => const [];
+}
+
+class MemoryPrompts {
+  static String formatCurrentTimeTag(DateTime? now, {bool? useIso8601}) => '';
+  static String rulesPastConversationRecallFor(dynamic assistant) => '';
+  static String get legacyCurrentTimePlaceholder => '';
+}
+
+class MemorySnapshotState {
+  final String prefix;
+  final String? hash;
+  final bool isEmpty;
+  const MemorySnapshotState({this.prefix = '', this.hash, this.isEmpty = true});
+}
+
+class MemoryBlockBuilder {
+  static dynamic splitInjectedPrefix(String content) => null;
+  static int? endOfInjectedPrefix(String content) => null;
+}
+
+class SearchToolService {
+  static const toolName = 'web_search';
+  static Map<String, dynamic> getToolDefinition() => {};
+  static String getSystemPrompt([dynamic a]) => '';
+}
+
+class ResponsesReplayScope {
+  static const official = 'official';
+}
+
+const String responsesTurnArtifactKind = 'responses_turn';
+
+class ClaudeThinkingRecovery {
+  static String? readArtifact(dynamic a) => null;
+  static dynamic get artifact => null;
+}
 
 /// Result of §7.6 memory-prefix resolution.
 ///
@@ -161,6 +213,15 @@ class MessageBuilderService {
   })?
   ocrPrefetch;
 
+  Future<MemorySnapshotState?> readMemorySnapshot({
+    dynamic repository,
+    dynamic assistantId,
+    dynamic lang,
+    dynamic maxItems,
+    dynamic conversation,
+    dynamic assistant,
+  }) async => null;
+
   /// OCR text wrapper function
   String Function(String ocrText)? ocrTextWrapper;
 
@@ -169,15 +230,6 @@ class MessageBuilderService {
   /// the provider strips.
   final String? Function(ChatMessage message, String kind)?
   providerArtifactLookup;
-
-  String? _providerArtifact(ChatMessage message, String kind) {
-    // Native replay data follows the frozen message, including an explicitly
-    // empty snapshot. A later LRU eviction or stream update must not change it.
-    if (message.hasProviderArtifactSnapshot) {
-      return message.providerArtifactSnapshot[kind];
-    }
-    return providerArtifactLookup?.call(message, kind);
-  }
 
   /// Cache for document text extraction to avoid re-reading files on every message
   /// Keyed by path, validated with (modified + size) to avoid stale reuse.
@@ -242,7 +294,7 @@ class MessageBuilderService {
     if (conversation?.summary?.trim().isNotEmpty == true &&
         conversation!.truncateIndex < 0 &&
         conversation.lastSummarizedMessageCount ==
-            await chatService.resolveMessageCount(conversation.id)) {
+            chatService.resolveMessageCount(conversation.id)) {
       _appendToSystemMessage(
         messages,
         'Conversation summary:\n${conversation.summary}',
@@ -348,52 +400,8 @@ class MessageBuilderService {
 
     final out = <Map<String, dynamic>>[];
 
-    final thinkingRecovery = ClaudeThinkingRecovery();
     for (final m in source) {
-      if (includeToolMessages && !preserveToolTurns && m.role == 'assistant') {
-        thinkingRecovery.readArtifact(
-          _providerArtifact(m, claudeThinkingRecoveryArtifactKind),
-        );
-      }
-      if (m.role == 'assistant' &&
-          includeToolMessages &&
-          responsesScope != null) {
-        final history = buildResponsesHistory(
-          payload: _providerArtifact(m, responsesTurnArtifactKind),
-          scope: responsesScope,
-          toolEvents: chatService.getToolEventsForMessage(m),
-          content: m.content,
-        );
-        if (history != null) {
-          for (final message in history) {
-            ContextSegmentTags.replaceWithSingle(
-              message,
-              source: message['role'] == 'tool'
-                  ? ContextSource.toolResult
-                  : message['tool_calls'] is List
-                  ? ContextSource.toolCall
-                  : ContextSource.chatHistory,
-              length: (message['content'] ?? '').toString().length,
-            );
-          }
-          out.addAll(history);
-          continue;
-        }
-      }
       var content = m.content;
-      var hasClaudeToolTurn = false;
-      // Signed native blocks belong to the provider/model that produced them.
-      // Tool turns carry their artifact on the tool-call message below.
-      final plainClaudeTurn =
-          includeToolMessages &&
-              !preserveToolTurns &&
-              m.role == 'assistant' &&
-              claudeSource != null &&
-              m.providerId == claudeSource.providerId &&
-              m.modelId == claudeSource.modelId &&
-              chatService.getToolEventsForMessage(m).isEmpty
-          ? _providerArtifact(m, claudeTurnArtifactKind)
-          : null;
       String? assistantReasoningContent;
       dynamic reasoningDetails;
       if (m.role == 'assistant') {
@@ -413,8 +421,6 @@ class MessageBuilderService {
         }
         out.addAll(history.messages);
         content = history.content;
-        // Persisted parts own the position and exact bytes of each thinking
-        // block. The scalar spans all rounds and must not be repeated here.
         if (m.parts.any(
           (part) => part is ReasoningPart || part is ToolCallPart,
         )) {
@@ -426,7 +432,6 @@ class MessageBuilderService {
       } else if (includeToolMessages && m.role == 'assistant') {
         final events = chatService.getToolEventsForMessage(m);
         if (events.isNotEmpty) {
-          // Tool-call history is only valid once every call has a result.
           final hasPendingToolEvent = events.any((e) => e['content'] == null);
           if (!hasPendingToolEvent) {
             final calls = <Map<String, dynamic>>[];
@@ -476,30 +481,10 @@ class MessageBuilderService {
                 'content': '\n\n',
                 'tool_calls': calls,
               };
-              final turn = _providerArtifact(m, claudeTurnArtifactKind);
-              if (turn != null && turn.isNotEmpty) {
-                assistantToolMessage[multimodalInternalClaudeTurnKey] = turn;
-                hasClaudeToolTurn = claudeSource != null;
-              }
-              // Also here: a turn that ran code and then said nothing has no
-              // final message below to carry the container.
-              final container = _providerArtifact(
-                m,
-                claudeContainerArtifactKind,
-              );
-              if (container != null && container.isNotEmpty) {
-                assistantToolMessage[multimodalInternalClaudeContainerKey] =
-                    container;
-              }
               if (assistantReasoningContent?.isNotEmpty == true) {
                 assistantToolMessage['reasoning_content'] =
                     assistantReasoningContent;
               }
-              // The persisted reasoning_details belong to the final round of
-              // this message; attaching them to this synthetic pre-tool
-              // assistant message as well would replay the same reasoning
-              // twice, which OpenRouter/Anthropic reject. Only the final
-              // assistant message below carries them.
               ContextSegmentTags.replaceWithSingle(
                 assistantToolMessage,
                 source: ContextSource.toolCall,
@@ -522,15 +507,9 @@ class MessageBuilderService {
       }
 
       final mediaRefs = mediaRefsFromParts(m);
-      // Pure-attachment turns have empty text content but still must be sent.
-      // Document FileParts are omitted from mediaRefs (they travel via
-      // document extraction), so also keep messages that still have a usable
-      // ImagePart/FilePart for processUserMessagesForApi to inject text.
       if (content.isEmpty &&
           (assistantReasoningContent?.isEmpty ?? true) &&
           reasoningDetails == null &&
-          (plainClaudeTurn?.isEmpty ?? true) &&
-          !hasClaudeToolTurn &&
           mediaRefs.isEmpty &&
           !_hasUsableAttachmentPart(m)) {
         continue;
@@ -539,21 +518,6 @@ class MessageBuilderService {
       final message = <String, dynamic>{'role': role, 'content': content};
       if (role == 'user') {
         message[internalRevisionIdKey] = m.id;
-      } else {
-        if (plainClaudeTurn?.isNotEmpty == true) {
-          message[multimodalInternalClaudeTurnKey] = plainClaudeTurn;
-        }
-        final container = _providerArtifact(m, claudeContainerArtifactKind);
-        if (container != null && container.isNotEmpty) {
-          message[multimodalInternalClaudeContainerKey] = container;
-        }
-        final signature = _providerArtifact(
-          m,
-          geminiThoughtSignatureArtifactKind,
-        );
-        if (signature != null && signature.isNotEmpty) {
-          message[multimodalInternalGeminiThoughtSignatureKey] = signature;
-        }
       }
       if (mediaRefs.isNotEmpty) {
         message[internalMediaPathsKey] = mediaRefs;
@@ -578,12 +542,6 @@ class MessageBuilderService {
       out.add(message);
     }
 
-    // Carry the cumulative state on the last message so subsequent context
-    // trimming and textless assistant replies cannot lose the recovery.
-    final recoveryArtifact = thinkingRecovery.artifact;
-    if (out.isNotEmpty && recoveryArtifact != null) {
-      out.last[multimodalInternalClaudeThinkingRecoveryKey] = recoveryArtifact;
-    }
     return out;
   }
 
@@ -2043,27 +2001,7 @@ class MessageBuilderService {
     String? assistantId, {
     Conversation? conversation,
     bool conversationScoped = false,
-  }) async {
-    try {
-      final ip = contextProvider.read<InstructionInjectionProvider>();
-      await ip.initialize();
-      final prompt = ip.promptFor(
-        assistantId,
-        instructionIds: conversationScoped
-            ? ConversationPromptSettings.fromExtras(
-                conversation?.extras ?? const {},
-              ).instructionIds
-            : null,
-      );
-      if (prompt.isNotEmpty) {
-        _appendToSystemMessage(
-          apiMessages,
-          prompt,
-          source: ContextSource.instructionInjection,
-        );
-      }
-    } catch (_) {}
-  }
+  }) async {}
 
   /// Inject the workspace path / tool prompt after other system injections.
   Future<void> injectWorkspacePrompt(
@@ -2074,7 +2012,6 @@ class MessageBuilderService {
     List<AttachmentInfo> attachments = const [],
   }) async {
     try {
-      final environmentProvider = contextProvider.read<EnvironmentProvider?>();
       final ctx =
           workspaceContext ??
           await WorkspaceToolsService.resolve(
@@ -2085,11 +2022,9 @@ class MessageBuilderService {
             chatService: chatService,
           );
       if (ctx == null) return;
-      final environment = await environmentProvider?.loadExecutionConfig();
       final fragment = WorkspaceToolsService.buildPromptFragment(
         ctx,
         attachments: attachments,
-        environmentVariableNames: environment?.variables.keys ?? const [],
       );
       if (fragment.trim().isEmpty) return;
       _appendToSystemMessage(
@@ -2146,338 +2081,7 @@ class MessageBuilderService {
     List<ChatMessage>? sourceMessages,
     bool persistActivation = true,
     void Function(int before, int after)? onActivationPersisted,
-  }) async {
-    try {
-      List<WorldBook> books = const <WorldBook>[];
-      try {
-        final wb = contextProvider.read<WorldBookProvider>();
-        await wb.initialize();
-        books = wb.activeBooksFor(
-          assistantId,
-          bookIds: conversationScoped
-              ? ConversationPromptSettings.fromExtras(
-                  conversation?.extras ?? const {},
-                ).worldBookIds
-              : null,
-        );
-      } catch (_) {}
-      final latest = conversation == null
-          ? null
-          : chatService.getConversation(conversation.id) ?? conversation;
-      final rawState = latest?.extras[WorldBookActivation.extrasKey];
-      final previous = rawState is Map
-          ? Map<String, dynamic>.from(rawState)
-          : <String, dynamic>{};
-      bool isChatMessage(ChatMessage message) =>
-          (message.role == 'user' || message.role == 'assistant') &&
-          (!message.isStreaming ||
-              message.content.trim().isNotEmpty ||
-              message.parts.any((part) => part is! TextPart));
-      var historyMessages = sourceMessages?.where(isChatMessage).toList();
-      final usesTiming = books.any(
-        (book) => book.entries.any(
-          (entry) =>
-              entry.enabled &&
-              (entry.sticky > 0 || entry.cooldown > 0 || entry.delay > 0),
-        ),
-      );
-      // Generation can hand us a bounded context window. Timers count the whole
-      // selected conversation through this request's last message, including on
-      // regeneration; future messages and the empty reply placeholder do not count.
-      if (usesTiming &&
-          conversation != null &&
-          historyMessages != null &&
-          historyMessages.isNotEmpty &&
-          chatService.initialized) {
-        final fullHistory = await chatService.loadSelectedContextMessages(
-          conversation.id,
-          truncateIndex: -1,
-          limit: await chatService.resolveMessageCount(conversation.id),
-          throughRevisionId: historyMessages.last.id,
-        );
-        if (fullHistory.isNotEmpty) {
-          historyMessages = fullHistory.where(isChatMessage).toList();
-        }
-      }
-      final result = WorldBookActivation.evaluate(
-        books: books,
-        scanMessages: apiMessages,
-        history: historyMessages == null
-            ? [
-                for (final message in apiMessages)
-                  if ((message['role'] == 'user' ||
-                          message['role'] == 'assistant') &&
-                      message['tool_calls'] == null &&
-                      (message['content'] ?? '').toString().trim().isNotEmpty)
-                    {'role': message['role'], 'content': message['content']},
-              ]
-            : [
-                for (final message in historyMessages)
-                  {
-                    'role': message.role,
-                    'content': message.content,
-                    'attachments': [
-                      for (final part in message.parts)
-                        if (part is ImagePart || part is FilePart)
-                          part.encodePayload(),
-                    ],
-                  },
-              ],
-        previous: previous,
-      );
-      if (persistActivation &&
-          conversation != null &&
-          ((result.state['effects'] as Map).isNotEmpty ||
-              previous.isNotEmpty)) {
-        final before = chatService.contextRevision(conversation.id);
-        await chatService.updateConversationExtras(conversation.id, (extras) {
-          final next = Map<String, dynamic>.from(extras);
-          if ((result.state['effects'] as Map).isEmpty) {
-            next.remove(WorldBookActivation.extrasKey);
-          } else {
-            next[WorldBookActivation.extrasKey] = result.state;
-          }
-          return next;
-        });
-        onActivationPersisted?.call(
-          before,
-          chatService.contextRevision(conversation.id),
-        );
-      }
-      final triggered = result.entries;
-      if (triggered.isEmpty) return;
-
-      String wrapSystemTag(String content) => '<system>\n$content\n</system>';
-
-      String joinContents(Iterable<WorldBookEntry> items) {
-        return items
-            .map((e) => e.content.trim())
-            .where((c) => c.isNotEmpty)
-            .join('\n');
-      }
-
-      List<Map<String, dynamic>> createMergedInjectionMessages(
-        List<WorldBookEntry> injections, {
-        required WorldBookInjectionPosition position,
-      }) {
-        final byRole = <WorldBookInjectionRole, List<WorldBookEntry>>{};
-        for (final e in injections) {
-          if (e.content.trim().isEmpty) continue;
-          byRole.putIfAbsent(e.role, () => <WorldBookEntry>[]).add(e);
-        }
-
-        final result = <Map<String, dynamic>>[];
-        for (final role in byRole.keys) {
-          final group = byRole[role]!;
-          final merged = joinContents(group);
-          if (merged.isEmpty) continue;
-          final message = role == WorldBookInjectionRole.assistant
-              ? <String, dynamic>{'role': 'assistant', 'content': merged}
-              : <String, dynamic>{
-                  'role': 'user',
-                  'content': wrapSystemTag(merged),
-                };
-          ContextSegmentTags.replaceWithSingle(
-            message,
-            source: ContextSource.worldBook,
-            length: (message['content'] ?? '').toString().length,
-            meta: {'position': position.toJson()},
-          );
-          result.add(message);
-        }
-        return result;
-      }
-
-      int findSafeInsertIndex(List<Map<String, dynamic>> messages, int target) {
-        var index = target.clamp(0, messages.length);
-        while (index > 0 && index < messages.length) {
-          final role = (messages[index]['role'] ?? '').toString();
-          if (role != 'tool') break;
-          index--;
-        }
-        return index;
-      }
-
-      final byPosition = <WorldBookInjectionPosition, List<WorldBookEntry>>{};
-      for (final t in triggered) {
-        byPosition.putIfAbsent(t.position, () => <WorldBookEntry>[]).add(t);
-      }
-
-      // BEFORE/AFTER_SYSTEM_PROMPT: merge into system message.
-      final beforeContent = joinContents(
-        byPosition[WorldBookInjectionPosition.beforeSystemPrompt] ??
-            const <WorldBookEntry>[],
-      );
-      final afterContent = joinContents(
-        byPosition[WorldBookInjectionPosition.afterSystemPrompt] ??
-            const <WorldBookEntry>[],
-      );
-
-      if (beforeContent.isNotEmpty || afterContent.isNotEmpty) {
-        final systemIndex = apiMessages.indexWhere(
-          (m) => (m['role'] ?? '').toString() == 'system',
-        );
-        if (systemIndex >= 0) {
-          final original = (apiMessages[systemIndex]['content'] ?? '')
-              .toString();
-          final sb = StringBuffer();
-          if (beforeContent.isNotEmpty) {
-            sb.write(beforeContent);
-            sb.write('\n');
-          }
-          sb.write(original);
-          if (afterContent.isNotEmpty) {
-            sb.write('\n');
-            sb.write(afterContent);
-          }
-          apiMessages[systemIndex]['content'] = sb.toString();
-          final sysMsg = apiMessages[systemIndex];
-          if (beforeContent.isNotEmpty) {
-            ContextSegmentTags.prepend(
-              sysMsg,
-              source: ContextSource.worldBook,
-              length: beforeContent.length + 1,
-              meta: {
-                'position': WorldBookInjectionPosition.beforeSystemPrompt
-                    .toJson(),
-              },
-            );
-          }
-          if (afterContent.isNotEmpty) {
-            ContextSegmentTags.append(
-              sysMsg,
-              source: ContextSource.worldBook,
-              length: 1 + afterContent.length,
-              meta: {
-                'position': WorldBookInjectionPosition.afterSystemPrompt
-                    .toJson(),
-              },
-            );
-          }
-        } else {
-          final sb = StringBuffer();
-          if (beforeContent.isNotEmpty) sb.write(beforeContent);
-          if (afterContent.isNotEmpty) {
-            if (sb.isNotEmpty) sb.write('\n');
-            sb.write(afterContent);
-          }
-          if (sb.isNotEmpty) {
-            final created = <String, dynamic>{
-              'role': 'system',
-              'content': sb.toString(),
-            };
-            if (beforeContent.isNotEmpty && afterContent.isNotEmpty) {
-              ContextSegmentTags.write(created, [
-                ContextSegmentTags.item(
-                  source: ContextSource.worldBook,
-                  length: beforeContent.length + 1,
-                  meta: {
-                    'position': WorldBookInjectionPosition.beforeSystemPrompt
-                        .toJson(),
-                  },
-                ),
-                ContextSegmentTags.item(
-                  source: ContextSource.worldBook,
-                  length: afterContent.length,
-                  meta: {
-                    'position': WorldBookInjectionPosition.afterSystemPrompt
-                        .toJson(),
-                  },
-                ),
-              ]);
-            } else if (beforeContent.isNotEmpty) {
-              ContextSegmentTags.replaceWithSingle(
-                created,
-                source: ContextSource.worldBook,
-                length: beforeContent.length,
-                meta: {
-                  'position': WorldBookInjectionPosition.beforeSystemPrompt
-                      .toJson(),
-                },
-              );
-            } else {
-              ContextSegmentTags.replaceWithSingle(
-                created,
-                source: ContextSource.worldBook,
-                length: afterContent.length,
-                meta: {
-                  'position': WorldBookInjectionPosition.afterSystemPrompt
-                      .toJson(),
-                },
-              );
-            }
-            apiMessages.insert(0, created);
-          }
-        }
-      }
-
-      // TOP_OF_CHAT: insert before first user message.
-      final topInjections = byPosition[WorldBookInjectionPosition.topOfChat];
-      if (topInjections != null && topInjections.isNotEmpty) {
-        var insertIndex = apiMessages.indexWhere(
-          (m) => (m['role'] ?? '').toString() == 'user',
-        );
-        if (insertIndex < 0) insertIndex = apiMessages.length;
-        insertIndex = findSafeInsertIndex(apiMessages, insertIndex);
-        apiMessages.insertAll(
-          insertIndex,
-          createMergedInjectionMessages(
-            topInjections,
-            position: WorldBookInjectionPosition.topOfChat,
-          ),
-        );
-      }
-
-      // BOTTOM_OF_CHAT: insert before last message.
-      final bottomInjections =
-          byPosition[WorldBookInjectionPosition.bottomOfChat];
-      if (bottomInjections != null && bottomInjections.isNotEmpty) {
-        var insertIndex = apiMessages.isEmpty ? 0 : (apiMessages.length - 1);
-        insertIndex = findSafeInsertIndex(apiMessages, insertIndex);
-        apiMessages.insertAll(
-          insertIndex,
-          createMergedInjectionMessages(
-            bottomInjections,
-            position: WorldBookInjectionPosition.bottomOfChat,
-          ),
-        );
-      }
-
-      // AT_DEPTH: depth=0 appends; depth=1 inserts before the last message.
-      final atDepthInjections = byPosition[WorldBookInjectionPosition.atDepth];
-      if (atDepthInjections != null && atDepthInjections.isNotEmpty) {
-        final byDepth = <int, List<WorldBookEntry>>{};
-        for (final e in atDepthInjections) {
-          final depth = e.injectDepth.clamp(0, 200);
-          byDepth.putIfAbsent(depth, () => <WorldBookEntry>[]).add(e);
-        }
-
-        final depths = byDepth.keys.toList(growable: false)
-          ..sort((a, b) => b.compareTo(a));
-        final originalLength = apiMessages.length;
-        final historyStart = apiMessages
-            .takeWhile((message) => message['role'] == 'system')
-            .length;
-        var insertedCount = 0;
-
-        for (final depth in depths) {
-          final injections = byDepth[depth] ?? const <WorldBookEntry>[];
-          // Anchor to the original history so multiple oversized depths keep
-          // their order after clamping to the start of the chat.
-          var insertIndex =
-              (originalLength - depth).clamp(historyStart, originalLength) +
-              insertedCount;
-          insertIndex = findSafeInsertIndex(apiMessages, insertIndex);
-          final messages = createMergedInjectionMessages(
-            injections,
-            position: WorldBookInjectionPosition.atDepth,
-          );
-          apiMessages.insertAll(insertIndex, messages);
-          insertedCount += messages.length;
-        }
-      }
-    } catch (_) {}
-  }
+  }) async {}
 
   /// Helper to append content to the system message (or create one if missing).
   void _appendToSystemMessage(

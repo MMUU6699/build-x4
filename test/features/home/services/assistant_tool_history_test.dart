@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:Kelivo/core/database/chat_database_repository.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/models/message_part.dart';
@@ -37,19 +36,6 @@ void main() {
   test(
     'malformed stored tools do not block healthy Chat Completions history',
     () async {
-      final root = await Directory.systemTemp.createTemp(
-        'tool_history_corrupt_',
-      );
-      final file = File('${root.path}/chat.sqlite');
-      var repository = ChatDatabaseRepository.open(file: file);
-      addTearDown(() async {
-        await repository.close();
-        await root.delete(recursive: true);
-      });
-      await repository.ensureReady();
-      await repository.putConversation(
-        Conversation(id: 'c', title: 'Imported'),
-      );
       const parts = [
         ReasoningPart('Plan'),
         TextPart('Before.'),
@@ -61,18 +47,12 @@ void main() {
         ToolCallPart('[]'),
         TextPart('After.'),
       ];
-      await repository.putMessage(
-        ChatMessage(
-          id: 'a',
-          role: 'assistant',
-          conversationId: 'c',
-          parts: parts,
-        ),
+      final restored = ChatMessage(
+        id: 'a',
+        role: 'assistant',
+        conversationId: 'c',
+        parts: parts,
       );
-      await repository.close();
-      repository = ChatDatabaseRepository.open(file: file);
-      await repository.ensureReady();
-      final restored = (await repository.getMessage('a'))!;
       final builder = MessageBuilderService(
         chatService: _Chat(),
         contextProvider: _Context(),
@@ -102,7 +82,6 @@ void main() {
       expect(history[3]['content'], 'After.');
       expect(history[4]['content'], 'Next');
       expect(restored.parts, parts);
-      expect((await repository.getMessage('a'))!.parts, parts);
     },
   );
 

@@ -193,23 +193,8 @@ class _BasicSettingsTabState extends State<_BasicSettingsTab> {
                 icon: Lucide.Brain,
                 label: l10n.assistantEditThinkingBudgetTitle,
                 tip: l10n.assistantEditReasoningClampedSubtitle,
-                detailText: a.reasoning == null
-                    ? l10n.assistantEditReasoningFollowDefault
-                    : reasoningLevelLabel(l10n, a.reasoning!.level),
-                onTap: () async {
-                  final assistantProvider = context.read<AssistantProvider>();
-                  final picked = await showAssistantReasoningPicker(
-                    context,
-                    current: a.reasoning,
-                  );
-                  if (!context.mounted || picked == null) return;
-                  if (picked.request == a.reasoning) return;
-                  await assistantProvider.updateAssistant(
-                    picked.request == null
-                        ? a.copyWith(clearReasoning: true)
-                        : a.copyWith(reasoning: picked.request),
-                  );
-                },
+                detailText: l10n.assistantEditReasoningFollowDefault,
+                onTap: null,
               ),
               _iosDivider(context),
               // Max tokens
@@ -310,21 +295,7 @@ class _BasicSettingsTabState extends State<_BasicSettingsTab> {
               ),
               const SizedBox(height: 8),
               _TactileRow(
-                onTap: () async {
-                  final assistantProvider = context.read<AssistantProvider>();
-                  final sel = await showModelSelector(
-                    context,
-                    initialProviderKey: a.chatModelProvider,
-                    initialModelId: a.chatModelId,
-                  );
-                  if (!context.mounted || sel == null) return;
-                  await assistantProvider.updateAssistant(
-                    a.copyWith(
-                      chatModelProvider: sel.providerKey,
-                      chatModelId: sel.modelId,
-                    ),
-                  );
-                },
+                onTap: () {},
                 pressedScale: 0.98,
                 builder: (pressed) {
                   final bg = context.appColors.surfaceFill;

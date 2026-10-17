@@ -3,7 +3,10 @@ part of '../desktop_settings_page.dart';
 // ===== Display Settings Body =====
 
 class _DisplaySettingsBody extends StatelessWidget {
-  const _DisplaySettingsBody();
+  const _DisplaySettingsBody({this.searchTarget, this.searchNavigation});
+  final SettingsSearchItem? searchTarget;
+  final int? searchNavigation;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -1232,20 +1235,16 @@ class _HoverDropdownButton extends StatelessWidget {
     required this.label,
     required this.onHover,
     required this.onTap,
-    this.fontSize = 14,
-    this.verticalPadding = 8,
-    this.borderRadius = 10,
-    this.rightAlignArrow = false,
   });
   final bool hovered;
   final bool open;
   final String label;
   final ValueChanged<bool> onHover;
   final VoidCallback onTap;
-  final double fontSize;
-  final double verticalPadding;
-  final double borderRadius;
-  final bool rightAlignArrow;
+  static const double fontSize = 14;
+  static const double verticalPadding = 8;
+  static const double borderRadius = 10;
+  static const bool rightAlignArrow = false;
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -3901,6 +3900,21 @@ class _SendShortcutOverlayState extends State<_SendShortcutOverlay>
           ),
         ),
       ),
+    );
+  }
+}
+
+class _IconBtn extends StatelessWidget {
+  const _IconBtn({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: Icon(icon, size: 16),
+      onPressed: onTap,
+      splashRadius: 16,
     );
   }
 }

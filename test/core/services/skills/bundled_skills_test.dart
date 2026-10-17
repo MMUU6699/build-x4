@@ -9,15 +9,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import '../../../support/business_test_harness.dart';
-
 class _MissingAssets extends CachingAssetBundle {
   @override
   Future<ByteData> load(String key) async => throw StateError('asset missing');
 }
 
 class _FailingSkillStore extends ExtensionEntityStore {
-  _FailingSkillStore(super.database);
+  _FailingSkillStore();
 
   @override
   Future<void> upsert(
@@ -32,13 +30,11 @@ class _FailingSkillStore extends ExtensionEntityStore {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late BusinessTestHarness harness;
   late Directory root;
   late ExtensionEntityStore store;
 
   setUp(() async {
-    harness = await createBusinessTestHarness();
-    store = ExtensionEntityStore(harness.database);
+    store = ExtensionEntityStore();
     root = await Directory.systemTemp.createTemp('kelivo_bundled_skills_');
     addTearDown(() => root.delete(recursive: true));
   });
@@ -240,9 +236,7 @@ void main() {
     await reference.parent.create();
     await reference.writeAsString('User notes');
 
-    final failed = createService(
-      entityStore: _FailingSkillStore(harness.database),
-    );
+    final failed = createService(entityStore: _FailingSkillStore());
     await expectLater(failed.loaded, throwsStateError);
     expect(await reference.readAsString(), 'User notes');
     expect(
@@ -267,9 +261,7 @@ void main() {
   test(
     'failed registration leaves no partial installation or completion receipt',
     () async {
-      final failed = createService(
-        entityStore: _FailingSkillStore(harness.database),
-      );
+      final failed = createService(entityStore: _FailingSkillStore());
       await expectLater(failed.loaded, throwsStateError);
       expect(await root.list().toList(), isEmpty);
 

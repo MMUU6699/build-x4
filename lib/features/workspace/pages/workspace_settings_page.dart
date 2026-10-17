@@ -4,11 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:Kelivo/core/models/environment_state.dart';
-import 'package:Kelivo/core/providers/environment_provider.dart';
 import 'package:Kelivo/core/services/workspace/workspace_runtime.dart';
 import 'package:Kelivo/features/workspace/pages/workspaces_page.dart';
-import 'package:Kelivo/features/workspace/widgets/environment/environment_labels.dart';
 import 'package:Kelivo/features/workspace/workspace_navigation.dart';
 import 'package:Kelivo/icons/lucide_adapter.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
@@ -84,24 +81,12 @@ class _EnvironmentNavRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final env = context.watch<EnvironmentProvider>();
-    final runtime = context.watch<WorkspaceRuntimeProvider>();
-    final status = runtime.lastStatus;
-    final phase = status?.ready == true
-        ? EnvironmentPhase.ready
-        : env.state.phase;
-    final label = workspaceEnvEngineLabel(
-      l10n: l10n,
-      state: env.state,
-      status: status,
-    );
     return SectionCard(
       children: [
         IosNavRow(
-          icon: workspaceEnvEngineIcon(state: env.state, status: status),
-          label: label,
-          subtitle: _phaseLabel(l10n, phase),
+          icon: Lucide.Boxes,
+          label: 'Daytona Cloud Sandbox',
+          subtitle: 'Active & Cloud Connected',
           labelWeight: AppFontWeights.medium,
           onTap: () => WorkspaceNavigation.openEnvironmentPage(context),
         ),
@@ -114,25 +99,4 @@ bool _envIsDesktopTarget() {
   return defaultTargetPlatform == TargetPlatform.macOS ||
       defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.linux;
-}
-
-String _phaseLabel(AppLocalizations l10n, EnvironmentPhase phase) {
-  switch (phase) {
-    case EnvironmentPhase.notInstalled:
-      return l10n.workspaceEnvPhaseNotInstalled;
-    case EnvironmentPhase.downloading:
-      return l10n.workspaceEnvPhaseDownloading;
-    case EnvironmentPhase.verifying:
-      return l10n.workspaceEnvPhaseVerifying;
-    case EnvironmentPhase.extracting:
-      return l10n.workspaceEnvPhaseExtracting;
-    case EnvironmentPhase.patching:
-      return l10n.workspaceEnvPhasePatching;
-    case EnvironmentPhase.ready:
-      return l10n.workspaceEnvPhaseReady;
-    case EnvironmentPhase.error:
-      return l10n.workspaceEnvPhaseError;
-    case EnvironmentPhase.needsRestart:
-      return l10n.workspaceEnvPhaseNeedsRestart;
-  }
 }

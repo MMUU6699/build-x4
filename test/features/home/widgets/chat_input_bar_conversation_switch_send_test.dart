@@ -38,11 +38,7 @@ void main() {
                 create: (_) =>
                     SettingsProvider(createBusinessTestPreferences()),
               ),
-              ChangeNotifierProvider(
-                create: (_) => AssistantProvider(
-                  preferences: createBusinessTestPreferences(),
-                ),
-              ),
+              ChangeNotifierProvider(create: (_) => AssistantProvider()),
             ],
             child: MaterialApp(
               localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -99,11 +95,7 @@ void main() {
                 create: (_) =>
                     SettingsProvider(createBusinessTestPreferences()),
               ),
-              ChangeNotifierProvider(
-                create: (_) => AssistantProvider(
-                  preferences: createBusinessTestPreferences(),
-                ),
-              ),
+              ChangeNotifierProvider(create: (_) => AssistantProvider()),
             ],
             child: MaterialApp(
               localizationsDelegates: AppLocalizations.localizationsDelegates,

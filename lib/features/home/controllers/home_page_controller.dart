@@ -1,16 +1,12 @@
 import '../../../core/database/composer_draft_store.dart';
 import '../../../core/models/composer_draft.dart';
 import '../../../core/services/app_exit_flush.dart';
-import '../../scheduled_tasks/scheduled_task_preparation_binding.dart';
-import '../../../core/services/scheduled_tasks_service.dart';
-import '../../scheduled_tasks/scheduled_task_runner.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show listEquals, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../../core/database/chat_database_repository.dart';
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/message_part.dart';
@@ -18,18 +14,12 @@ import '../../../core/models/conversation.dart';
 import '../../../core/models/reasoning_request.dart';
 import '../../../core/models/workspace_binding.dart';
 import '../../../core/providers/workspace_provider.dart';
-import '../../../core/models/quick_phrase.dart';
 import '../../../core/models/assistant_regex.dart';
 import '../../../core/providers/assistant_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/mcp_provider.dart';
-import '../../../core/providers/tts_provider.dart';
-import '../../../core/providers/quick_phrase_provider.dart';
-import '../../../core/providers/instruction_injection_provider.dart';
-import '../../../core/providers/memory_provider.dart';
 import '../../../core/services/chat/chat_service.dart';
 import '../../../core/utils/scheduler_idle.dart';
-import '../../../core/services/tts/tts_text_selection.dart';
 import '../../../core/services/haptics.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/services/mobile_background.dart';
@@ -54,15 +44,14 @@ import 'home_view_model.dart';
 import '../services/context_usage_service.dart';
 import '../services/message_builder_service.dart';
 import '../services/message_generation_service.dart';
-import '../services/local_tools_service.dart';
 import '../services/ask_user_interaction_service.dart';
 import '../services/ocr_service.dart';
-import '../services/translation_service.dart';
 import '../services/file_upload_service.dart';
+import '../../../core/database/chat_database_repository.dart'
+    show MiniMapSearchHit;
 import '../utils/chat_layout_constants.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/share_destination_sheet.dart';
-import '../../model/widgets/model_select_sheet.dart';
 
 enum ChatSelectionMode { share, delete }
 
@@ -156,7 +145,6 @@ class HomePageController extends ChangeNotifier {
   late MessageGenerationService _messageGenerationService;
   late HomeViewModel _viewModel;
   late OcrService _ocrService;
-  late TranslationService _translationService;
   late FileUploadService _fileUploadService;
   late scroll_ctrl.ChatScrollController _scrollCtrl;
 
@@ -275,7 +263,6 @@ class HomePageController extends ChangeNotifier {
   void _attachComposerDrafts() {
     if (_composerDrafts != null) return;
     final drafts = _chatService.composerDrafts;
-    if (drafts == null) return;
     _composerDrafts = drafts;
     _mediaController.draftStore = drafts;
     _mediaController.onDraftChanged = _saveComposerDraft;
@@ -712,10 +699,6 @@ class HomePageController extends ChangeNotifier {
       onError: (error) =>
           _showBackgroundTaskFailure(BackgroundTaskKind.ocr, error),
     );
-    _translationService = TranslationService(
-      chatService: _chatService,
-      getContext: () => _scaffoldKey.currentContext ?? _context,
-    );
     _fileUploadService = FileUploadService(
       getContext: () => _context,
       mediaController: _mediaController,
@@ -890,35 +873,8 @@ class HomePageController extends ChangeNotifier {
 
   void _initializeProviders() {
     try {
-      final quickPhraseProvider = _context.read<QuickPhraseProvider>();
-      Future.microtask(() async {
-        try {
-          await quickPhraseProvider.initialize();
-        } catch (_) {}
-      });
-    } catch (_) {}
-    try {
-      final instructionProvider = _context.read<InstructionInjectionProvider>();
-      Future.microtask(() async {
-        try {
-          await instructionProvider.initialize();
-        } catch (_) {}
-      });
-    } catch (_) {}
-    try {
-      final memoryProvider = _context.read<MemoryProvider>();
-      Future.microtask(() async {
-        try {
-          await memoryProvider.initialize();
-        } catch (_) {}
-      });
-    } catch (_) {}
-    try {
       _mcpProvider = _context.read<McpProvider>();
       _mcpProvider!.addListener(_onMcpChanged);
-    } catch (_) {}
-    try {
-      unawaited(DeviceLocalTools.prefetchIosCapabilities());
     } catch (_) {}
   }
 
@@ -967,7 +923,6 @@ class HomePageController extends ChangeNotifier {
           }
           break;
         case ChatAction.switchModel:
-          unawaited(showModelSelectSheet(ctx, controller: this));
           break;
         case ChatAction.enterGlobalSearch:
           enterGlobalSearchMode(preserveQuery: true);
@@ -1145,27 +1100,6 @@ class HomePageController extends ChangeNotifier {
       }
       await _activateComposerDraft();
       _chatInitialized = true;
-      if (ScheduledTasksService.supported) {
-        if (ScheduledTasksService.instance.isIOS) {
-          final binding = _scheduledPreparation =
-              ScheduledTaskPreparationBinding(ScheduledTasksService.instance);
-          if (!_context.mounted) return;
-          await binding.attach(
-            _context,
-            _messageBuilderService,
-            _chatController,
-          );
-        }
-        final executor = _scheduledExecutor =
-            (task, cancellation, onConversation) => runScheduledTask(
-              _context,
-              _viewModel,
-              task,
-              cancellation,
-              onConversation,
-            );
-        await ScheduledTasksService.instance.attach(executor);
-      }
     } finally {
       _startupConversationPending = false;
       notifyListeners();
@@ -1963,10 +1897,11 @@ class HomePageController extends ChangeNotifier {
         selectedGroupIds.add(message.groupId ?? message.id);
       }
     }
-    return _chatService.loadMessageIdsForGroups(
+    final ids = await _chatService.loadMessageIdsForGroups(
       conversation.id,
       selectedGroupIds,
     );
+    return ids.toSet();
   }
 
   Future<void> forkConversation(ChatMessage message) async {
@@ -2021,7 +1956,6 @@ class HomePageController extends ChangeNotifier {
             )
           : null,
     );
-    if (newMsg == null) return;
 
     if (await _chatController.openAroundPersistedMessage(newMsg)) {
       _viewModel.restoreMessageUiState();
@@ -2115,7 +2049,9 @@ class HomePageController extends ChangeNotifier {
           _recoverComposerSubmission(owner);
           return;
         }
-        await _finishComposerSubmission(submission);
+        if (submission != null) {
+          await _finishComposerSubmission(submission);
+        }
       } catch (_) {
         if (submission != null && await drafts.wasSubmitted(submission.id)) {
           await _finishComposerSubmission(submission);
@@ -2215,9 +2151,7 @@ class HomePageController extends ChangeNotifier {
     final newMsg = await _chatService.appendMessageVersion(
       messageId: editState.messageId,
       parts: parts,
-      draftSubmission: input.draftSubmission,
     );
-    if (newMsg == null) return null;
     if (currentConversation?.id != conversation.id) return newMsg;
 
     if (await _chatController.openAroundPersistedMessage(newMsg)) {
@@ -2250,117 +2184,15 @@ class HomePageController extends ChangeNotifier {
     );
   }
 
-  Future<void> translateMessage(ChatMessage message) async {
-    final ctx = _scaffoldKey.currentContext ?? _context;
-    final l10n = AppLocalizations.of(ctx)!;
+  Future<void> translateMessage(ChatMessage message) async {}
 
-    final result = await _translationService.translateMessage(
-      message: message,
-      onTranslationStarted: () {
-        final loadingMessage = message.copyWith(
-          translation: l10n.homePageTranslating,
-        );
-        final index = messages.indexWhere((m) => m.id == message.id);
-        if (index != -1) {
-          messages[index] = loadingMessage;
-        }
-        // Messages are mutated externally; invalidate ChatController caches so
-        // collapsed/grouped views reflect updates immediately.
-        _chatController.invalidateCache();
-        _translations[message.id] = TranslationData();
-        notifyListeners();
-      },
-      onTranslationUpdate: (translation) {
-        final updatingMessage = message.copyWith(translation: translation);
-        final index = messages.indexWhere((m) => m.id == message.id);
-        if (index != -1) {
-          messages[index] = updatingMessage;
-        }
-        _chatController.invalidateCache();
-        notifyListeners();
-      },
-      onTranslationCleared: () {
-        final clearedMessage = message.copyWith(translation: '');
-        final index = messages.indexWhere((m) => m.id == message.id);
-        if (index != -1) {
-          messages[index] = clearedMessage;
-        }
-        _chatController.invalidateCache();
-        _translations.remove(message.id);
-        notifyListeners();
-      },
-    );
-
-    if (result.isCancelled) return;
-    if (!ctx.mounted) return;
-
-    if (result.type == TranslationResultType.noModelConfigured) {
-      showAppSnackBar(
-        ctx,
-        message: l10n.homePagePleaseSetupTranslateModel,
-        type: NotificationType.warning,
-      );
-      return;
-    }
-
-    if (result.type == TranslationResultType.error) {
-      showAppSnackBar(
-        ctx,
-        message: l10n.homePageTranslateFailed(result.errorMessage ?? ''),
-        type: NotificationType.error,
-      );
-    }
-  }
-
-  Future<void> _handleAssistantMessageFinished(ChatMessage message) async {
-    if (!_context.mounted || message.role != 'assistant') return;
-    final settings = _context.read<SettingsProvider>();
-    if (settings.ttsAutoPlayAssistantReplies) {
-      await _speakAssistantMessage(message, autoPlay: true);
-    }
-  }
+  Future<void> _handleAssistantMessageFinished(ChatMessage message) async {}
 
   @visibleForTesting
   Future<void> debugHandleAssistantMessageFinished(ChatMessage message) =>
       _handleAssistantMessageFinished(message);
 
-  Future<void> speakMessage(ChatMessage message) async {
-    await _speakAssistantMessage(message, autoPlay: false);
-  }
-
-  Future<void> _speakAssistantMessage(
-    ChatMessage message, {
-    required bool autoPlay,
-  }) async {
-    final tts = _context.read<TtsProvider>();
-    if (!autoPlay && tts.playbackState.isActive) {
-      await tts.stop();
-      return;
-    }
-
-    if (PlatformUtils.isDesktopTarget) {
-      final sp = _context.read<SettingsProvider>();
-      final hasNetworkTts = sp.selectedTtsService != null;
-      if (!hasNetworkTts && !tts.isAvailable) {
-        showAppSnackBar(
-          _context,
-          message: AppLocalizations.of(_context)!.desktopTtsPleaseAddProvider,
-          type: NotificationType.warning,
-        );
-        return;
-      }
-    }
-
-    final sp = _context.read<SettingsProvider>();
-    final text = TtsTextSelection.apply(
-      message.content,
-      mode: sp.ttsTextSelectionMode,
-    );
-    if (text.trim().isEmpty) return;
-    // Automatic narration acknowledges preparation, so ChatActions can release
-    // generation resources while the independent speech session keeps running.
-    await tts.speak(text, waitForCompletion: !autoPlay);
-  }
+  Future<void> speakMessage(ChatMessage message) async {}
 
   void shareMessage(int messageIndex, List<ChatMessage> messageList) {
     startMessageSelection(
@@ -2959,30 +2791,7 @@ class HomePageController extends ChangeNotifier {
   // Public Methods - Quick Phrases
   // ============================================================================
 
-  Future<void> handleQuickPhraseSelection(QuickPhrase? selected) async {
-    if (selected == null) return;
-    final text = _inputController.text;
-    final selection = _inputController.selection;
-    final start = (selection.start >= 0 && selection.start <= text.length)
-        ? selection.start
-        : text.length;
-    final end =
-        (selection.end >= 0 &&
-            selection.end <= text.length &&
-            selection.end >= start)
-        ? selection.end
-        : start;
-
-    final newText = text.replaceRange(start, end, selected.content);
-    _inputController.value = _inputController.value.copyWith(
-      text: newText,
-      selection: TextSelection.collapsed(
-        offset: start + selected.content.length,
-      ),
-      composing: TextRange.empty,
-    );
-    notifyListeners();
-  }
+  Future<void> handleQuickPhraseSelection([dynamic selected]) async {}
 
   // ============================================================================
   // Public Methods - File Upload
@@ -3513,14 +3322,7 @@ class HomePageController extends ChangeNotifier {
     _streamController.setPresentationEnabled(
       _homePresentationVisible && _homeAppVisible,
     );
-    if (state == AppLifecycleState.resumed ||
-        state == AppLifecycleState.paused) {
-      unawaited(
-        ScheduledTasksService.instance.lifecycle(
-          state == AppLifecycleState.resumed,
-        ),
-      );
-    }
+
     if (state == AppLifecycleState.resumed) {
       ScreenWakelock.reassert();
     }
@@ -3658,9 +3460,6 @@ class HomePageController extends ChangeNotifier {
   // Disposal
   // ============================================================================
 
-  ScheduledTaskExecutor? _scheduledExecutor;
-  ScheduledTaskPreparationBinding? _scheduledPreparation;
-
   @override
   void dispose() {
     _saveComposerDraft();
@@ -3674,10 +3473,6 @@ class HomePageController extends ChangeNotifier {
     _mediaController.onDraftChanged = null;
     _mediaController.onBeginSubmission = null;
     unawaited(_composerDrafts?.flush().catchError((Object _) {}));
-    if (_scheduledExecutor case final executor?) {
-      _scheduledPreparation?.dispose();
-      ScheduledTasksService.instance.detach(executor);
-    }
     final background = MobileBackgroundCoordinator.instance;
     if (background.visibleConversation == _visibleBackgroundConversation) {
       background.visibleConversation = null;

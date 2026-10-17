@@ -1,11 +1,10 @@
 import 'dart:async';
 
-import 'package:Kelivo/core/database/generation_run.dart';
+import 'package:Kelivo/core/models/generation_run.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/message_part.dart';
 import 'package:Kelivo/core/models/token_usage.dart';
 import 'package:Kelivo/core/services/api/stream/stream_chunk.dart';
-import 'package:Kelivo/core/models/provider_oauth.dart';
 import 'package:Kelivo/core/models/mobile_background_settings.dart';
 import 'package:Kelivo/core/services/mobile_background.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
@@ -34,23 +33,22 @@ class _ThrowingFinalizeChatService extends ChatService {
   String? lastErrorCode;
 
   @override
-  Future<GenerationRun?> finalizeGenerationRunSilent({
-    required ChatMessage message,
-    required List<Map<String, dynamic>> toolEvents,
-    required String? generationRunId,
-    required GenerationRunState? expectedState,
-    required int? expectedStateRevision,
-    required GenerationRunState terminalState,
+  Future<void> finalizeGenerationRunSilent({
+    ChatMessage? message,
+    List<Map<String, dynamic>>? toolEvents,
+    String? generationRunId,
+    GenerationRunState? expectedState,
+    int? expectedStateRevision,
+    GenerationRunState? terminalState,
     int? checkpointSeq,
     String? errorCode,
   }) async {
-    terminalStates.add(terminalState);
+    if (terminalState != null) terminalStates.add(terminalState);
     lastMessage = message;
     lastErrorCode = errorCode;
     if (failCompletion && terminalState == GenerationRunState.completed) {
       throw StateError('persist failed');
     }
-    return null;
   }
 }
 

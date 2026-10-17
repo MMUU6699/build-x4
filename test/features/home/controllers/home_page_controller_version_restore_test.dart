@@ -49,19 +49,20 @@ class _VersionedChatService extends ChatService {
   @override
   int getMessageCount(String conversationId) => 1;
 
-  @override
   bool isConversationFullyCached(String conversationId) => true;
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) async {
-    final timestamp = DateTime(2026, 7, 29);
     final selected = selectedVersion == 0 ? older : newer;
     return LoadedTimelinePage(
       conversationId: conversationId,
@@ -70,13 +71,9 @@ class _VersionedChatService extends ChatService {
       slots: [
         LoadedTimelineSlot(
           identity: ActiveTimelineSlot(
-            slotId: 'answer',
             revisionId: selected.id,
-            parentRevisionId: null,
-            role: 'assistant',
-            createdAt: timestamp,
-            updatedAt: timestamp,
-            finalizedAt: timestamp,
+            groupId: 'answer',
+            version: selected.version,
             versionCount: 2,
             logicalIndex: 0,
           ),
@@ -94,7 +91,6 @@ class _VersionedChatService extends ChatService {
     'answer': selectedVersion,
   };
 
-  @override
   List<ChatMessage> getMessagesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -106,13 +102,11 @@ class _VersionedChatService extends ChatService {
     Iterable<String> groupIds,
   ) async => [older, newer];
 
-  @override
   Map<String, int> getFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
   ) => const {'answer': 0};
 
-  @override
   Future<Map<String, int>> loadFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -127,7 +121,6 @@ class _VersionedChatService extends ChatService {
     selectedVersion = version;
   }
 
-  @override
   List<Map<String, dynamic>> getToolEvents(String assistantMessageId) {
     if (assistantMessageId != older.id) return const [];
     return [

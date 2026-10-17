@@ -1,5 +1,20 @@
 part of 'assistant_settings_edit_page.dart';
 
+class MemoryPrompts {
+  static List<String> detectTimeVariablesInSystemPrompt(String text) {
+    final matches = <String>[];
+    if (text.contains('{{current_time}}')) matches.add('{{current_time}}');
+    if (text.contains('{{date}}')) matches.add('{{date}}');
+    if (text.contains('{{time}}')) matches.add('{{time}}');
+    return matches;
+  }
+
+  static String formatCurrentTimeTag(DateTime dt, {bool useIso8601 = false}) {
+    if (useIso8601) return dt.toIso8601String();
+    return dt.toString().split('.').first;
+  }
+}
+
 class _PromptTab extends StatefulWidget {
   const _PromptTab({required this.assistantId});
   final String assistantId;

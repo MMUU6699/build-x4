@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/models/workspace_binding.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
@@ -18,7 +16,6 @@ import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:Kelivo/shared/widgets/custom_bottom_sheet.dart';
 import 'package:Kelivo/shared/widgets/ios_tile_button.dart';
 import 'package:Kelivo/shared/widgets/markdown_with_highlight.dart';
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
@@ -232,9 +229,11 @@ void main() {
   });
 
   tearDown(() {
-    if (tempDir.existsSync()) {
-      tempDir.deleteSync(recursive: true);
-    }
+    try {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    } catch (_) {}
   });
 
   test('classifies preview kind by extension and content sniff', () async {
@@ -706,17 +705,12 @@ void main() {
     final previewFile = File(p.join(tempDir.path, 'foo.txt'))
       ..writeAsStringSync('resolved-body\nline-2\n');
 
-    late AppDatabase database;
     late WorkspaceProvider workspaces;
     await tester.runAsync(() async {
-      database = AppDatabase(NativeDatabase.memory());
-      await database.customSelect('SELECT 1;').getSingle();
-      workspaces = WorkspaceProvider(store: ExtensionEntityStore(database));
+      workspaces = WorkspaceProvider();
       await workspaces.loaded;
     });
-    addTearDown(() async {
-      await database.close();
-    });
+    addTearDown(workspaces.dispose);
     final resolver = _RecordingResolver(workspaces)..result = previewFile;
 
     final conversation = Conversation(

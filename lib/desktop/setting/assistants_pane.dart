@@ -3,7 +3,7 @@ part of '../desktop_settings_page.dart';
 // ===== Assistants (Desktop right content) =====
 
 class _DesktopAssistantsBody extends StatelessWidget {
-  const _DesktopAssistantsBody({super.key});
+  const _DesktopAssistantsBody();
   @override
   Widget build(BuildContext context) {
     final assistants = context.watch<AssistantProvider>().assistants;
@@ -757,6 +757,39 @@ class _AssistantAvatarDesktop extends StatelessWidget {
       child: Text(
         emoji.characters.take(1).toString(),
         style: TextStyle(fontSize: size * 0.5),
+      ),
+    );
+  }
+}
+
+class _CardPress extends StatefulWidget {
+  const _CardPress({
+    required this.onTap,
+    this.pressedScale = 1.0,
+    required this.builder,
+  });
+
+  final VoidCallback onTap;
+  final double pressedScale;
+  final Widget Function(bool pressed, Color overlay) builder;
+
+  @override
+  State<_CardPress> createState() => _CardPressState();
+}
+
+class _CardPressState extends State<_CardPress> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: widget.builder(
+        _pressed,
+        _pressed ? Colors.black.withValues(alpha: 0.05) : Colors.transparent,
       ),
     );
   }

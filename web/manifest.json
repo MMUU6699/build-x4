@@ -1,11 +1,11 @@
 {
-    "name": "kelivo",
-    "short_name": "kelivo",
+    "name": "Build X",
+    "short_name": "Build X",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#FFFFFF",
     "theme_color": "#0175C2",
-    "description": "An LLM chat client.",
+    "description": "Build X — Cloud AI Agent & Daytona Workspace Client.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

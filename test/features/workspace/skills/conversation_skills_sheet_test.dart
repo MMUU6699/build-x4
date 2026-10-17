@@ -38,14 +38,11 @@ void main() {
     WidgetTester tester, {
     List<String>? skillIds,
   }) async {
-    final harness = await createBusinessTestHarness(
-      initial: {
-        'assistants_v1': Assistant.encodeList([
-          Assistant(id: _assistantId, name: 'A', skillIds: skillIds),
-        ]),
-      },
+    final ap = AssistantProvider(
+      initialAssistants: [
+        Assistant(id: _assistantId, name: 'A', skillIds: skillIds),
+      ],
     );
-    final ap = AssistantProvider(preferences: harness.preferences);
     await tester.runAsync(() => ap.loaded);
     return ap;
   }

@@ -38,9 +38,7 @@ void main() {
   testWidgets(
     'gradient without an image uses live glass without capturing frames',
     (tester) async {
-      final assistants = AssistantProvider(
-        preferences: createBusinessTestPreferences(),
-      );
+      final assistants = AssistantProvider();
       await assistants.loaded;
       final id = await assistants.addAssistant(name: 'Gradient');
       await assistants.setCurrentAssistant(id);
@@ -90,9 +88,7 @@ void main() {
   testWidgets('image snapshots resume after turning the gradient off', (
     tester,
   ) async {
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Gradient');
     await assistants.setCurrentAssistant(id);
@@ -151,9 +147,7 @@ void main() {
     testWidgets(
       'gradient rendering stays bounded during a 2000-message streaming chat: animated=$animated',
       (tester) async {
-        final assistants = AssistantProvider(
-          preferences: createBusinessTestPreferences(),
-        );
+        final assistants = AssistantProvider();
         await assistants.loaded;
         final id = await assistants.addAssistant(name: 'Gradient');
         await assistants.setCurrentAssistant(id);
@@ -270,9 +264,7 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Frosted');
     await assistants.setCurrentAssistant(id);
@@ -339,9 +331,7 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Frosted');
     await assistants.setCurrentAssistant(id);
@@ -402,9 +392,7 @@ void main() {
       tester.view.devicePixelRatio = 2;
       addTearDown(tester.view.reset);
 
-      final assistants = AssistantProvider(
-        preferences: createBusinessTestPreferences(),
-      );
+      final assistants = AssistantProvider();
       await assistants.loaded;
       final id = await assistants.addAssistant(name: 'Frosted');
       await assistants.setCurrentAssistant(id);
@@ -493,9 +481,7 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Frosted');
     await assistants.setCurrentAssistant(id);
@@ -552,9 +538,7 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Frosted');
     await assistants.setCurrentAssistant(id);
@@ -605,9 +589,7 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Frosted');
     await assistants.setCurrentAssistant(id);
@@ -675,9 +657,7 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Frosted');
     await assistants.setCurrentAssistant(id);
@@ -742,9 +722,7 @@ void main() {
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
 
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final id = await assistants.addAssistant(name: 'Frosted');
     await assistants.setCurrentAssistant(id);

@@ -1,20 +1,16 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../utils/app_directories.dart';
-import '../database/extension_entity_store.dart';
+import '../config/supabase_config.dart';
 import '../models/workspace.dart';
-import '../services/workspace/workspace_binding_actions.dart';
 import 'assistant_provider.dart';
 
 class WorkspaceProvider extends ChangeNotifier {
-  WorkspaceProvider({required this.store, this.assistants}) {
+  WorkspaceProvider({this.assistants}) {
     loaded = _load();
   }
 
-  final ExtensionEntityStore store;
   final AssistantProvider? assistants;
   final List<Workspace> _workspaces = <Workspace>[];
 
@@ -31,17 +27,39 @@ class WorkspaceProvider extends ChangeNotifier {
 
   Future<void> _load() async {
     try {
-      final entities = await store.listByKind(
-        ExtensionEntityStore.kindWorkspace,
-      );
-      _workspaces
-        ..clear()
-        ..addAll([
-          for (final entity in entities) Workspace.fromJson(entity.payload),
-        ]);
+      final user = SupabaseConfig.client.auth.currentUser;
+      if (user != null) {
+        final res = await SupabaseConfig.client
+            .from('workspaces')
+            .select()
+            .order('created_at', ascending: true);
+        _workspaces.clear();
+        for (final row in res as List<dynamic>) {
+          final map = row as Map<String, dynamic>;
+          _workspaces.add(
+            Workspace(
+              id: map['id'] as String,
+              name: map['name'] as String,
+              kind: WorkspaceKind.values.firstWhere(
+                (k) => k.name == map['kind'],
+                orElse: () => WorkspaceKind.managed,
+              ),
+              hostPath: map['host_path'] as String?,
+              lastUsedAt: map['last_used_at'] != null
+                  ? DateTime.tryParse(map['last_used_at'] as String)
+                  : null,
+              createdAt:
+                  DateTime.tryParse(map['created_at'] as String? ?? '') ??
+                  DateTime.now(),
+              updatedAt:
+                  DateTime.tryParse(map['updated_at'] as String? ?? '') ??
+                  DateTime.now(),
+            ),
+          );
+        }
+      }
     } catch (e) {
-      debugPrint('Failed to load workspaces: $e');
-      _workspaces.clear();
+      debugPrint('Failed to load workspaces from Supabase: $e');
     }
     notifyListeners();
   }
@@ -61,15 +79,22 @@ class WorkspaceProvider extends ChangeNotifier {
       createdAt: now,
       updatedAt: now,
     );
-    if (kind == WorkspaceKind.managed) {
-      await AppDirectories.workspaceFilesDir(workspace.id);
+    try {
+      final user = SupabaseConfig.client.auth.currentUser;
+      if (user != null) {
+        await SupabaseConfig.client.from('workspaces').insert({
+          'id': workspace.id,
+          'user_id': user.id,
+          'name': workspace.name,
+          'kind': workspace.kind.name,
+          'host_path': workspace.hostPath,
+          'created_at': now.toIso8601String(),
+          'updated_at': now.toIso8601String(),
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to create workspace in Supabase: $e');
     }
-    await store.upsert(
-      ExtensionEntityStore.kindWorkspace,
-      workspace.id,
-      workspace.toJson(),
-      sortOrder: _workspaces.length,
-    );
     _workspaces.add(workspace);
     notifyListeners();
     return workspace;
@@ -78,13 +103,24 @@ class WorkspaceProvider extends ChangeNotifier {
   Future<void> update(Workspace workspace) async {
     await loaded;
     final next = workspace.copyWith(updatedAt: DateTime.now().toUtc());
+    try {
+      final user = SupabaseConfig.client.auth.currentUser;
+      if (user != null) {
+        await SupabaseConfig.client
+            .from('workspaces')
+            .update({
+              'name': next.name,
+              'kind': next.kind.name,
+              'host_path': next.hostPath,
+              'last_used_at': next.lastUsedAt?.toIso8601String(),
+              'updated_at': next.updatedAt.toIso8601String(),
+            })
+            .eq('id', next.id);
+      }
+    } catch (e) {
+      debugPrint('Failed to update workspace in Supabase: $e');
+    }
     final index = _workspaces.indexWhere((item) => item.id == next.id);
-    await store.upsert(
-      ExtensionEntityStore.kindWorkspace,
-      next.id,
-      next.toJson(),
-      sortOrder: index >= 0 ? index : null,
-    );
     if (index >= 0) {
       _workspaces[index] = next;
     } else {
@@ -95,25 +131,15 @@ class WorkspaceProvider extends ChangeNotifier {
 
   Future<void> delete(String id, {bool deleteFiles = true}) async {
     await loaded;
-    final existing = byId(id);
-    await store.delete(ExtensionEntityStore.kindWorkspace, id);
-    _workspaces.removeWhere((workspace) => workspace.id == id);
-    if (deleteFiles &&
-        existing != null &&
-        existing.kind == WorkspaceKind.managed) {
-      final root = await AppDirectories.getWorkspacesDirectory();
-      final dir = Directory('${root.path}/$id');
-      if (await dir.exists()) {
-        await dir.delete(recursive: true);
+    try {
+      final user = SupabaseConfig.client.auth.currentUser;
+      if (user != null) {
+        await SupabaseConfig.client.from('workspaces').delete().eq('id', id);
       }
+    } catch (e) {
+      debugPrint('Failed to delete workspace in Supabase: $e');
     }
-    final assistants = this.assistants;
-    if (assistants != null) {
-      await clearAssistantDefaultsForDeletedWorkspace(
-        assistants,
-        workspaceId: id,
-      );
-    }
+    _workspaces.removeWhere((workspace) => workspace.id == id);
     notifyListeners();
   }
 

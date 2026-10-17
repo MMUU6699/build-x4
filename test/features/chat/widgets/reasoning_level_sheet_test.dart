@@ -90,8 +90,7 @@ Future<void> _pumpSheet(
       providers: [
         ChangeNotifierProvider<SettingsProvider>.value(value: settings),
         ChangeNotifierProvider<AssistantProvider>(
-          create: (_) =>
-              AssistantProvider(preferences: createBusinessTestPreferences()),
+          create: (_) => AssistantProvider(),
         ),
       ],
       child: MaterialApp(

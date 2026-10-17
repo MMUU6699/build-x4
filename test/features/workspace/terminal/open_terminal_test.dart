@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/providers/workspace_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
@@ -13,7 +11,6 @@ import 'package:Kelivo/features/workspace/terminal/terminal_session_manager.dart
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:Kelivo/shared/widgets/snackbar.dart';
 import 'package:Kelivo/theme/theme_factory.dart';
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -47,22 +44,19 @@ void main() {
 
   late Directory tempDir;
   late PathProviderPlatform previousPathProvider;
-  late AppDatabase database;
   late WorkspaceProvider workspaces;
 
   setUp(() async {
     tempDir = Directory.systemTemp.createTempSync('kelivo_open_terminal_');
     previousPathProvider = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
-    database = AppDatabase(NativeDatabase.memory());
-    await database.customSelect('SELECT 1;').getSingle();
-    workspaces = WorkspaceProvider(store: ExtensionEntityStore(database));
+    workspaces = WorkspaceProvider();
     await workspaces.loaded;
   });
 
   tearDown(() async {
     PathProviderPlatform.instance = previousPathProvider;
-    await database.close();
+    workspaces.dispose();
     if (tempDir.existsSync()) {
       tempDir.deleteSync(recursive: true);
     }

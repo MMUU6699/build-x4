@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import '../../models/model_spec.dart';
-import '../../models/provider_oauth.dart';
 import '../../providers/settings_provider.dart';
 
 /// Host / kind / oauth-derived defaults. Model-id defaults live in

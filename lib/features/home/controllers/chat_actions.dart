@@ -1,9 +1,8 @@
-import '../../../core/services/auth/provider_oauth_service.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
-import '../../../core/database/generation_run.dart';
+import '../../../core/models/generation_run.dart';
 import '../../../core/models/assistant.dart';
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
@@ -15,8 +14,6 @@ import '../../../core/providers/assistant_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/models/reasoning_request.dart';
 import '../../../core/services/api/chat_api_service.dart';
-import '../../../core/services/api/providers/openai/responses_history.dart';
-import '../../../core/services/api/providers/claude/claude_history.dart';
 import '../../../core/services/api/reasoning/reasoning_selection.dart';
 import '../../../core/services/api/retry_policy.dart';
 import '../../../core/services/api/stream/stream_chunk.dart';
@@ -1208,11 +1205,8 @@ class ChatActions {
           conversation: conversation,
         );
 
-    if (modelConfig.providerKey == null || modelConfig.modelId == null) {
-      return ChatActionResult.noModel();
-    }
-    final providerKey = modelConfig.providerKey!;
-    final modelId = modelConfig.modelId!;
+    final providerKey = modelConfig.providerKey ?? 'mistral';
+    final modelId = modelConfig.modelId ?? 'mistral-medium-latest';
 
     if (chatController.currentConversation?.id == conversation.id &&
         chatController.hasMoreAfter) {
@@ -1449,7 +1443,7 @@ class ChatActions {
   ) {
     return resolveContextReadLimit(
       assistant: assistant,
-      resolvePersistedCount: () =>
+      resolvePersistedCount: () async =>
           chatService.resolveMessageCount(conversation.id),
     );
   }
@@ -1620,11 +1614,8 @@ class ChatActions {
           conversation: conversation,
         );
 
-    if (modelConfig.providerKey == null || modelConfig.modelId == null) {
-      return ChatActionResult.noModel();
-    }
-    final providerKey = modelConfig.providerKey!;
-    final modelId = modelConfig.modelId!;
+    final providerKey = modelConfig.providerKey ?? 'mistral';
+    final modelId = modelConfig.modelId ?? 'mistral-medium-latest';
 
     if (shouldPhysicallyRemoveRegenerationTail(
       deleteTrailingEnabled: truncateFuture,
@@ -1878,11 +1869,8 @@ class ChatActions {
       assistant,
       conversation: conversation,
     );
-    if (modelConfig.providerKey == null || modelConfig.modelId == null) {
-      return ChatActionResult.noModel();
-    }
-    final providerKey = modelConfig.providerKey!;
-    final modelId = modelConfig.modelId!;
+    final providerKey = modelConfig.providerKey ?? 'mistral';
+    final modelId = modelConfig.modelId ?? 'mistral-medium-latest';
 
     // The visible bubble predates the recovered answer. Use the refreshed
     // context and merge cached results too (temporary chats have no DB rows).
@@ -2152,18 +2140,8 @@ class ChatActions {
   Future<void> _executeGeneration(stream_ctrl.GenerationContext ctx) async {
     final state = stream_ctrl.StreamingState(
       ctx,
-      responsesTurnPrefix: chatService.getProviderArtifactForMessage(
-        ctx.assistantMessage,
-        responsesTurnArtifactKind,
-      ),
-      claudeTurnPrefix:
-          ctx.providerKey == ctx.assistantMessage.providerId &&
-              ctx.modelId == ctx.assistantMessage.modelId
-          ? chatService.getProviderArtifactForMessage(
-              ctx.assistantMessage,
-              claudeTurnArtifactKind,
-            )
-          : null,
+      responsesTurnPrefix: null,
+      claudeTurnPrefix: null,
     );
     _streamingStates[state.messageId] = state;
     final assistant = ctx.assistant;
@@ -2379,21 +2357,13 @@ class ChatActions {
   Future<void> _persistProviderArtifact(
     stream_ctrl.StreamingState state,
     ProviderArtifact artifact,
-  ) => chatService.setProviderArtifact(
-    state.messageId,
-    artifact.kind,
-    switch (artifact.kind) {
-      responsesTurnArtifactKind => appendResponsesTurn(
-        state.responsesTurnPrefix,
-        artifact.payload,
-      ),
-      claudeTurnArtifactKind => appendClaudeTurn(
-        state.claudeTurnPrefix,
-        artifact.payload,
-      ),
-      _ => artifact.payload,
-    },
-  );
+  ) async {
+    await chatService.setProviderArtifact(
+      state.messageId,
+      artifact.kind,
+      artifact.payload,
+    );
+  }
 
   void _applyUsage(stream_ctrl.StreamingState state) {
     state.usage = state.partsHandler.usage;

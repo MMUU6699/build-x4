@@ -1,7 +1,5 @@
 import 'dart:io';
 
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
@@ -9,7 +7,6 @@ import 'package:Kelivo/core/providers/workspace_provider.dart';
 import 'package:Kelivo/features/assistant/pages/assistant_settings_edit_page.dart';
 import 'package:Kelivo/features/assistant/widgets/assistant_default_workspace_row.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -54,22 +51,18 @@ void main() {
 
   late Directory tempDir;
   late PathProviderPlatform previousPathProvider;
-  late AppDatabase database;
   late WorkspaceProvider workspaces;
 
   setUp(() async {
     tempDir = Directory.systemTemp.createTempSync('kelivo_assistant_ws_tab_');
     previousPathProvider = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
-    database = AppDatabase(NativeDatabase.memory());
-    await database.customSelect('SELECT 1;').getSingle();
-    workspaces = WorkspaceProvider(store: ExtensionEntityStore(database));
+    workspaces = WorkspaceProvider();
     await workspaces.loaded;
   });
 
   tearDown(() async {
     PathProviderPlatform.instance = previousPathProvider;
-    await database.close();
     if (tempDir.existsSync()) {
       tempDir.deleteSync(recursive: true);
     }
@@ -93,14 +86,14 @@ void main() {
       );
       if (workspace == null) fail('workspace create failed');
 
-      final harness = await createBusinessTestHarness(
+      await createBusinessTestHarness(
         initial: {
           'assistants_v1': Assistant.encodeList([
             Assistant(id: _assistantId, name: 'Default Assistant'),
           ]),
         },
       );
-      final ap = AssistantProvider(preferences: harness.preferences);
+      final ap = AssistantProvider();
       await tester.runAsync(() => ap.loaded);
       expect(ap.getById(_assistantId)?.defaultWorkspaceId, isNull);
 

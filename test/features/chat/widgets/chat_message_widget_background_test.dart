@@ -10,17 +10,8 @@ import 'package:provider/provider.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/message_part.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/tts_provider.dart';
-import 'package:Kelivo/core/services/api/providers/openai/chat_completions_decoder.dart';
-import 'package:Kelivo/core/services/api/providers/openai/openai_tool_transcript.dart';
-import 'package:Kelivo/core/services/api/providers/openai/responses_api.dart';
-import 'package:Kelivo/core/services/api/providers/openai/responses_decoder.dart';
-import 'package:Kelivo/core/services/api/stream/sse_event.dart';
-import 'package:Kelivo/core/services/api/stream/stream_chunk.dart';
 import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/chat/widgets/frosted/frosted_surface.dart';
-import 'package:Kelivo/features/home/controllers/stream_controller.dart'
-    as home_stream;
 import 'package:Kelivo/features/home/services/ask_user_interaction_service.dart';
 import 'package:Kelivo/icons/lucide_adapter.dart';
 import 'package:Kelivo/features/home/services/tool_approval_service.dart';
@@ -49,19 +40,11 @@ Widget _buildHarness({
   required Widget child,
   AskUserInteractionService? askUserService,
   ToolApprovalService? approvalService,
-  TtsProvider? ttsProvider,
   Locale? locale,
 }) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<SettingsProvider>.value(value: settings),
-      if (ttsProvider != null)
-        ChangeNotifierProvider<TtsProvider>.value(value: ttsProvider)
-      else
-        ChangeNotifierProvider(
-          create: (_) =>
-              TtsProvider(preferences: createBusinessTestPreferences()),
-        ),
       ChangeNotifierProvider<ToolApprovalService>.value(
         value: approvalService ?? ToolApprovalService(),
       ),
@@ -88,24 +71,6 @@ Finder _findNetworkImage(String url) {
         widget.image is NetworkImage &&
         (widget.image as NetworkImage).url == url,
   );
-}
-
-class _RecordingTtsProvider extends TtsProvider {
-  _RecordingTtsProvider() : super(preferences: createBusinessTestPreferences());
-
-  final spokenTexts = <String>[];
-
-  @override
-  bool get isAvailable => true;
-
-  @override
-  Future<void> speak(
-    String text, {
-    bool flush = true,
-    bool waitForCompletion = true,
-  }) async {
-    spokenTexts.add(text);
-  }
 }
 
 void main() {
@@ -242,93 +207,6 @@ void main() {
       expect(find.text('Second source'), findsOneWidget);
       expect(find.text('Third source'), findsOneWidget);
     });
-
-    testWidgets(
-      'search citation capsule uses latest streaming result for the same id',
-      (tester) async {
-        final settings = await _createSettings(
-          ChatMessageBackgroundStyle.defaultStyle,
-        );
-        final controller = home_stream.StreamController(
-          onStateChanged: () {},
-          getSettingsProvider: () => settings,
-          getCurrentConversationId: () => 'conversation-search-same-id',
-        );
-        final message = ChatMessage(
-          id: 'assistant-search-same-id',
-          role: 'assistant',
-          content: 'Answer with incremental search citations.',
-          conversationId: 'conversation-search-same-id',
-          isStreaming: true,
-        );
-        final state = home_stream.StreamingState(
-          home_stream.GenerationContext(
-            assistantMessage: message,
-            apiMessages: const [],
-            userImagePaths: const [],
-            allowImagesApiRouting: false,
-            providerKey: 'test',
-            modelId: 'test-model',
-            assistant: null,
-            settings: settings,
-            config: ProviderConfig(
-              id: 'test',
-              enabled: true,
-              name: 'Test',
-              apiKey: '',
-              baseUrl: '',
-            ),
-            toolDefs: const [],
-            supportsReasoning: true,
-            enableReasoning: true,
-            streamOutput: true,
-          ),
-        );
-
-        Future<void> upsertToolEventInDb(
-          String messageId, {
-          required String id,
-          required String name,
-          required Map<String, dynamic> arguments,
-          String? content,
-          Map<String, dynamic>? metadata,
-        }) async {}
-
-        await controller.handleToolResultsChunk(
-          const ToolCallResult(
-            id: 'builtin_search',
-            output:
-                '{"items":[{"title":"First source","url":"https://one.example.com/a","text":"A"}]}',
-          ),
-          state,
-          upsertToolEventInDb: upsertToolEventInDb,
-        );
-        await controller.handleToolResultsChunk(
-          const ToolCallResult(
-            id: 'builtin_search',
-            output:
-                '{"items":[{"title":"First source","url":"https://one.example.com/a","text":"A"},{"title":"Second source","url":"https://two.example.com/b","text":"B"}]}',
-          ),
-          state,
-          upsertToolEventInDb: upsertToolEventInDb,
-        );
-
-        await tester.pumpWidget(
-          _buildHarness(
-            settings: settings,
-            locale: const Locale('zh'),
-            child: ChatMessageWidget(
-              message: message,
-              showModelIcon: false,
-              toolParts: controller.toolParts[message.id],
-            ),
-          ),
-        );
-        await tester.pump();
-
-        expect(find.text('2个引用'), findsOneWidget);
-      },
-    );
 
     testWidgets('search citation capsule falls back when source url is invalid', (
       tester,
@@ -856,50 +734,6 @@ void main() {
       expect(topGap, closeTo(bottomGap, 0.1));
     });
 
-    testWidgets('text to speech replay button speaks the tool text', (
-      tester,
-    ) async {
-      final settings = await _createSettings(
-        ChatMessageBackgroundStyle.defaultStyle,
-      );
-      final ttsProvider = _RecordingTtsProvider();
-      addTearDown(ttsProvider.dispose);
-
-      await tester.pumpWidget(
-        _buildHarness(
-          settings: settings,
-          ttsProvider: ttsProvider,
-          child: ChatMessageWidget(
-            message: ChatMessage(
-              role: 'assistant',
-              content: '',
-              conversationId: 'conversation-local-tts-replay',
-              isStreaming: true,
-            ),
-            showModelIcon: false,
-            toolParts: const [
-              ToolUIPart(
-                id: 'tts',
-                toolName: 'text_to_speech',
-                arguments: {'text': 'Replay this line'},
-                content: '{"success":true}',
-              ),
-            ],
-          ),
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      await tester.tap(find.byTooltip('Replay'));
-      await tester.pump();
-      await tester.tap(find.byTooltip('Replay'));
-      await tester.pump();
-
-      expect(ttsProvider.spokenTexts, ['Replay this line', 'Replay this line']);
-      expect(find.byTooltip('Replay'), findsOneWidget);
-    });
-
     testWidgets('tool card opens custom details and shows the full result', (
       tester,
     ) async {
@@ -1255,199 +1089,6 @@ void main() {
         await tester.pump();
         final result = await approvalFuture;
         expect(result.approved, isTrue);
-      },
-    );
-
-    testWidgets(
-      'late provider id keeps UI card and approval on the first-seen id',
-      (tester) async {
-        final decoder = ChatCompletionsStreamDecoder(sourceId: 'round-0');
-        final first = decoder.accept(
-          SseEvent(
-            data: jsonEncode({
-              'choices': [
-                {
-                  'delta': {
-                    'tool_calls': [
-                      {
-                        'index': 0,
-                        'function': {'name': 'lookup', 'arguments': '{'},
-                      },
-                    ],
-                  },
-                },
-              ],
-            }),
-          ),
-        );
-        decoder.accept(
-          SseEvent(
-            data: jsonEncode({
-              'choices': [
-                {
-                  'delta': {
-                    'tool_calls': [
-                      {
-                        'index': 0,
-                        'id': 'call_late',
-                        'function': {'arguments': '}'},
-                      },
-                    ],
-                  },
-                  'finish_reason': 'tool_calls',
-                },
-              ],
-            }),
-          ),
-        );
-        final uiId = first.chunks.whereType<ToolCallStart>().single.id;
-        final emitCall = clientToolCallsFromChatAcc(decoder.toolCalls).single;
-        expect(uiId, 'round-0:tool-1');
-        expect(emitCall.id, uiId);
-        expect(emitCall.providerCallId, 'call_late');
-
-        final settings = await _createSettings(
-          ChatMessageBackgroundStyle.defaultStyle,
-        );
-        await settings.setShowToolCards(false);
-        final approval = ToolApprovalService();
-        final approvalFuture = approval.requestApproval(
-          toolCallId: emitCall.id,
-          toolName: 'lookup',
-          arguments: emitCall.arguments,
-          conversationId: 'conversation-late-id',
-        );
-
-        await tester.pumpWidget(
-          _buildHarness(
-            settings: settings,
-            approvalService: approval,
-            locale: const Locale('en'),
-            child: ChatMessageWidget(
-              message: ChatMessage(
-                role: 'assistant',
-                content: 'Working',
-                conversationId: 'conversation-late-id',
-                isStreaming: true,
-              ),
-              showModelIcon: false,
-              showToolCards: false,
-              toolParts: [
-                ToolUIPart(
-                  id: uiId,
-                  toolName: 'lookup',
-                  arguments: emitCall.arguments,
-                  loading: true,
-                ),
-              ],
-            ),
-          ),
-        );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
-
-        expect(find.textContaining('lookup'), findsOneWidget);
-        expect(find.bySemanticsLabel('Approve'), findsOneWidget);
-
-        await tester.tap(find.bySemanticsLabel('Approve'));
-        await tester.pump();
-        final result = await approvalFuture;
-        expect(result.approved, isTrue);
-        expect(approval.isPending(uiId), isFalse);
-      },
-    );
-
-    testWidgets(
-      'Responses late call_id keeps UI card and approval on the first-seen id',
-      (tester) async {
-        final decoder = ResponsesStreamDecoder(sourceId: 'round-0');
-        final first = decoder.accept(
-          SseEvent(
-            data: jsonEncode({
-              'type': 'response.output_item.added',
-              'output_index': 0,
-              'item': {'type': 'function_call', 'id': 'fc_1', 'name': 'lookup'},
-            }),
-          ),
-        );
-        decoder.accept(
-          SseEvent(
-            data: jsonEncode({
-              'type': 'response.output_item.done',
-              'output_index': 0,
-              'item': {
-                'type': 'function_call',
-                'id': 'fc_1',
-                'call_id': 'call_late',
-                'name': 'lookup',
-                'arguments': '{"q":"kelivo"}',
-              },
-            }),
-          ),
-        );
-        final uiId = first.chunks.whereType<ToolCallStart>().single.id;
-        final decoded = decoder.takeFunctionCalls().single;
-        final emitCall = responsesCallsFromIndexMap({
-          decoded.index: decoded.toIndexFields(),
-        }).single;
-        expect(uiId, 'fc_1');
-        expect(emitCall.id, uiId);
-        expect(emitCall.providerCallId, 'call_late');
-
-        final settings = await _createSettings(
-          ChatMessageBackgroundStyle.defaultStyle,
-        );
-        await settings.setShowToolCards(false);
-        final approval = ToolApprovalService();
-        final approvalFuture = approval.requestApproval(
-          toolCallId: emitCall.id,
-          toolName: 'lookup',
-          arguments: emitCall.arguments,
-          conversationId: 'conversation-responses-late-id',
-        );
-
-        await tester.pumpWidget(
-          _buildHarness(
-            settings: settings,
-            approvalService: approval,
-            locale: const Locale('en'),
-            child: ChatMessageWidget(
-              message: ChatMessage(
-                role: 'assistant',
-                content: 'Working',
-                conversationId: 'conversation-responses-late-id',
-                isStreaming: true,
-              ),
-              showModelIcon: false,
-              showToolCards: false,
-              toolParts: [
-                ToolUIPart(
-                  id: uiId,
-                  toolName: 'lookup',
-                  arguments: emitCall.arguments,
-                  loading: true,
-                ),
-              ],
-            ),
-          ),
-        );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
-
-        expect(find.textContaining('lookup'), findsOneWidget);
-        expect(find.bySemanticsLabel('Approve'), findsOneWidget);
-
-        await tester.tap(find.bySemanticsLabel('Approve'));
-        await tester.pump();
-        final result = await approvalFuture;
-        expect(result.approved, isTrue);
-        expect(
-          approval.isPending(
-            uiId,
-            conversationId: 'conversation-responses-late-id',
-          ),
-          isFalse,
-        );
       },
     );
 

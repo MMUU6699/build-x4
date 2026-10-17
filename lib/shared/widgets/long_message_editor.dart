@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:re_editor/re_editor.dart';
+import '../../core/utils/rtl_helper.dart';
 
 typedef LongMessageContextMenuBuilder =
     Widget Function(
@@ -78,6 +79,7 @@ class LongMessageEditorState extends State<LongMessageEditor>
   List<int>? _lineStarts;
   CodeLines? _lastLines;
   bool _long = false;
+  bool _lastRtl = false;
   bool? _renderingLines;
   final _undoController = UndoHistoryController();
   BuildContext? _undoContext;
@@ -90,6 +92,7 @@ class LongMessageEditorState extends State<LongMessageEditor>
     super.initState();
     _text = widget.controller.text;
     _long = _supportsLineEditing(_text);
+    _lastRtl = isRtlText(_text);
     _focus = widget.focusNode ?? FocusNode();
     _scroll = _makeScrollController();
     widget.controller.addListener(_copyFromTextController);
@@ -359,10 +362,14 @@ class LongMessageEditorState extends State<LongMessageEditor>
     final nextLong = textChanged ? _supportsLineEditing(value.text) : _long;
     final changedMode = _long != nextLong;
     _long = nextLong;
+    final currentRtl = isRtlText(value.text);
+    final rtlChanged = _lastRtl != currentRtl;
+    _lastRtl = currentRtl;
     if (_lineController == null) {
-      if (changedMode && mounted) setState(() {});
+      if ((changedMode || rtlChanged) && mounted) setState(() {});
       return;
     }
+    if (rtlChanged && mounted) setState(() {});
     _mirroring = true;
     try {
       final selection = value.selection.isValid
@@ -570,7 +577,9 @@ class LongMessageEditorState extends State<LongMessageEditor>
   }
 
   Widget _buildEditor(BuildContext context) {
+    final isArabic = isRtlText(widget.controller.text);
     final renderingLines =
+        !isArabic &&
         _long &&
         !MediaQuery.accessibleNavigationOf(context) &&
         Directionality.of(context) != TextDirection.rtl;
@@ -602,6 +611,8 @@ class LongMessageEditorState extends State<LongMessageEditor>
           readOnly: widget.readOnly,
           onChanged: widget.onChanged,
           onSubmitted: widget.onSubmitted,
+          textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
+          textAlign: isArabic ? TextAlign.right : TextAlign.left,
           style: widget.style,
           cursorColor: widget.cursorColor,
           textInputAction: widget.textInputAction,

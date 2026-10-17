@@ -184,7 +184,7 @@ class ChatController extends ChangeNotifier {
       versionSelections = <String, int>{};
     }
     final groupIds = <String>{
-      for (final slot in page?.slots ?? const <LoadedTimelineSlot>[])
+      for (final slot in page.slots)
         if (slot.identity.versionCount > 1 ||
             slot.message.version > 0 ||
             versionSelections.containsKey(
@@ -368,7 +368,7 @@ class ChatController extends ChangeNotifier {
       limit: limit,
     );
     if (_currentConversation?.id != conversation.id) return false;
-    if (page == null || page.slots.isEmpty) return false;
+    if (page.slots.isEmpty) return false;
     final existing = {for (final message in _messages) message.id};
     _messages.insertAll(0, [
       for (final slot in page.slots)
@@ -403,7 +403,7 @@ class ChatController extends ChangeNotifier {
       limit: limit,
     );
     if (_currentConversation?.id != conversation.id) return false;
-    if (page == null || page.slots.isEmpty) return false;
+    if (page.slots.isEmpty) return false;
     final existing = {for (final message in _messages) message.id};
     _messages.addAll([
       for (final slot in page.slots)
@@ -490,7 +490,7 @@ class ChatController extends ChangeNotifier {
       );
       // Discard the page if the conversation changed while loading.
       if (_currentConversation?.id != conversation.id) return false;
-      if (page == null || page.slots.isEmpty) return false;
+      if (page.slots.isEmpty) return false;
       _replaceWindow(page);
     } finally {
       if (serial == _windowLoadSerial) _isLoadingWindow = false;
@@ -537,7 +537,7 @@ class ChatController extends ChangeNotifier {
     _replaceWindow(_withoutBackfilledHead(page, previousSlotIds));
     await _preloadVisibleGroupData();
     notifyListeners();
-    return page != null;
+    return true;
   }
 
   /// Applies a deletion to the loaded window in place instead of reloading it.
@@ -1150,8 +1150,13 @@ class ChatController extends ChangeNotifier {
         final currentIndex = _messages.indexWhere(
           (m) => (m.groupId ?? m.id) == groupId,
         );
-        if (currentIndex >= 0 && page != null && page.slots.isNotEmpty) {
-          _messages[currentIndex] = page.slots.single.message;
+        if (currentIndex >= 0 && page.slots.isNotEmpty) {
+          _messages[currentIndex] = page.slots
+              .firstWhere(
+                (s) => (s.message.groupId ?? s.message.id) == groupId,
+                orElse: () => page.slots.first,
+              )
+              .message;
         }
       }
       if (!ownsWindow()) return;

@@ -362,9 +362,9 @@ class ModelSpecResolver {
     if (match != null) {
       sources[ModelSpecField.abilities] = SpecSource.catalog;
       return <ModelAbility>[
-        if (match.model.toolCall) ModelAbility.tool,
-        if (match.model.reasoning) ModelAbility.reasoning,
-        if (match.model.structuredOutput) ModelAbility.structuredOutput,
+        if (match.model.toolCall == true) ModelAbility.tool,
+        if (match.model.reasoning == true) ModelAbility.reasoning,
+        if (match.model.structuredOutput == true) ModelAbility.structuredOutput,
       ];
     }
     sources[ModelSpecField.abilities] = SpecSource.guess;
@@ -644,10 +644,6 @@ class ModelSpecResolver {
     required ModelGuess guess,
     required Map<ModelSpecField, SpecSource> sources,
   }) {
-    if (match != null && match.model.temperature == false) {
-      sources[ModelSpecField.sampling] = SpecSource.catalog;
-      return SamplingPolicy.never;
-    }
     if (guess.sampling != null) {
       sources[ModelSpecField.sampling] = SpecSource.guess;
       return guess.sampling!;

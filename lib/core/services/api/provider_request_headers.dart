@@ -1,4 +1,3 @@
-import '../../models/provider_oauth.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../providers/settings_provider.dart';

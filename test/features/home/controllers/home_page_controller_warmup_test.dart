@@ -14,13 +14,16 @@ class _RecordingChatService extends ChatService {
   void Function()? onFirstTimelineCall;
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) async {
     timelineCalls.add(conversationId);
     final hook = onFirstTimelineCall;
@@ -28,7 +31,15 @@ class _RecordingChatService extends ChatService {
       onFirstTimelineCall = null;
       hook();
     }
-    return null;
+    return LoadedTimelinePage(
+      conversationId: conversationId,
+      stateRevision: 0,
+      contextStartRevisionId: null,
+      slots: const [],
+      hasMoreBefore: false,
+      hasMoreAfter: false,
+      totalSlotCount: 0,
+    );
   }
 }
 

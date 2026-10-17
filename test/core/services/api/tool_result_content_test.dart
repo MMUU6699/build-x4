@@ -10,7 +10,23 @@ import 'package:Kelivo/core/services/api/tool_result_content.dart';
 import 'package:Kelivo/utils/mcp_structured_image.dart';
 import 'package:Kelivo/utils/sandbox_path_resolver.dart';
 
-import '../../../support/claude_test_api.dart' show FakePathProviderPlatform;
+class _FakePathProviderPlatform extends PathProviderPlatform {
+  _FakePathProviderPlatform(this.path);
+
+  final String path;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => path;
+
+  @override
+  Future<String?> getApplicationSupportPath() async => path;
+
+  @override
+  Future<String?> getApplicationCachePath() async => '$path/cache';
+
+  @override
+  Future<String?> getTemporaryPath() async => '$path/tmp';
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +42,7 @@ void main() {
     directory = await Directory.systemTemp.createTemp('mcp_result_images_');
     await Directory('${directory.path}/images').create();
     originalPaths = PathProviderPlatform.instance;
-    PathProviderPlatform.instance = FakePathProviderPlatform(directory.path);
+    PathProviderPlatform.instance = _FakePathProviderPlatform(directory.path);
     SandboxPathResolver.debugSetDirs(docsDir: directory.path);
     image = File('${directory.path}/images/mcp_img_drawing (1).png');
     final bytes = img.encodePng(img.Image(width: 2, height: 3));

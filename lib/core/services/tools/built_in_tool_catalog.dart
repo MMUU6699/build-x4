@@ -1,8 +1,3 @@
-import '../../services/memory/memory_prompts.dart';
-import '../../services/memory/memory_tools.dart';
-import '../../services/search/search_tool_service.dart';
-import '../../services/search/web_fetch_tool_service.dart';
-import '../../../features/home/services/local_tools_service.dart';
 import '../workspace/workspace_tools_service.dart';
 
 enum BuiltInToolGroup { search, memory, local, workspace }
@@ -26,62 +21,26 @@ class BuiltInToolCatalogEntry {
   }
 }
 
-/// Ungated catalog of built-in tool schemas for the settings editor.
-///
-/// MCP tools are excluded: their names are dynamic and overrides would go stale.
+/// Ungated catalog of built-in tool schemas for Build X.
 abstract final class BuiltInToolCatalog {
   BuiltInToolCatalog._();
 
   static List<BuiltInToolCatalogEntry> entries({
-    required MemoryPromptLang lang,
-    required bool legacyMemoryMode,
+    dynamic lang,
+    bool legacyMemoryMode = false,
   }) {
-    final out = <BuiltInToolCatalogEntry>[
-      BuiltInToolCatalogEntry(
-        name: SearchToolService.toolName,
-        defaultDefinition: SearchToolService.getToolDefinition(),
-        group: BuiltInToolGroup.search,
-      ),
-      BuiltInToolCatalogEntry(
-        name: WebFetchToolService.toolName,
-        defaultDefinition: WebFetchToolService.getToolDefinition(),
-        group: BuiltInToolGroup.search,
-      ),
-    ];
-
-    final memoryDefs = legacyMemoryMode
-        ? MemoryTools.legacyDefinitions(lang)
-        : MemoryTools.catalogDefinitions(lang);
-    for (final def in memoryDefs) {
-      final name = _toolName(def);
-      if (name == null) continue;
-      out.add(
-        BuiltInToolCatalogEntry(
-          name: name,
-          defaultDefinition: def,
-          group: BuiltInToolGroup.memory,
-        ),
-      );
-    }
-
-    for (final name in LocalToolNames.all) {
-      if (!LocalToolsService.isAvailableOnThisPlatform(name)) continue;
-      out.add(
-        BuiltInToolCatalogEntry(
-          name: name,
-          defaultDefinition: LocalToolsService.definitionFor(name),
-          group: BuiltInToolGroup.local,
-        ),
-      );
-    }
+    final out = <BuiltInToolCatalogEntry>[];
     for (final definition in WorkspaceToolsService.definitions()) {
-      out.add(
-        BuiltInToolCatalogEntry(
-          name: _toolName(definition)!,
-          defaultDefinition: definition,
-          group: BuiltInToolGroup.workspace,
-        ),
-      );
+      final name = _toolName(definition);
+      if (name != null) {
+        out.add(
+          BuiltInToolCatalogEntry(
+            name: name,
+            defaultDefinition: definition,
+            group: BuiltInToolGroup.workspace,
+          ),
+        );
+      }
     }
     return out;
   }

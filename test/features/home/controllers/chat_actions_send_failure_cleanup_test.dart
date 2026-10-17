@@ -1,4 +1,4 @@
-import 'package:Kelivo/core/database/generation_run.dart';
+import 'package:Kelivo/core/models/generation_run.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
@@ -24,17 +24,17 @@ class _ThrowingFinalizeChatService extends ChatService {
   final errorCodes = <String?>[];
 
   @override
-  Future<GenerationRun?> finalizeGenerationRunSilent({
-    required ChatMessage message,
-    required List<Map<String, dynamic>> toolEvents,
-    required String? generationRunId,
-    required GenerationRunState? expectedState,
-    required int? expectedStateRevision,
-    required GenerationRunState terminalState,
+  Future<void> finalizeGenerationRunSilent({
+    ChatMessage? message,
+    List<Map<String, dynamic>>? toolEvents,
+    String? generationRunId,
+    GenerationRunState? expectedState,
+    int? expectedStateRevision,
+    GenerationRunState? terminalState,
     int? checkpointSeq,
     String? errorCode,
   }) async {
-    terminalStates.add(terminalState);
+    if (terminalState != null) terminalStates.add(terminalState);
     errorCodes.add(errorCode);
     throw StateError('cleanup write failed');
   }

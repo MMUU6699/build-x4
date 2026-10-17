@@ -33,9 +33,7 @@ void main() {
   testWidgets('tier 0 goldens: uniform backdrop never inserts BackdropFilter', (
     tester,
   ) async {
-    final assistants = AssistantProvider(
-      preferences: createBusinessTestPreferences(),
-    );
+    final assistants = AssistantProvider();
     await assistants.loaded;
     final settings = SettingsProvider(createBusinessTestPreferences());
     await settings.loaded;
@@ -67,9 +65,7 @@ void main() {
       tester.view.devicePixelRatio = 2;
       addTearDown(tester.view.reset);
 
-      final assistants = AssistantProvider(
-        preferences: createBusinessTestPreferences(),
-      );
+      final assistants = AssistantProvider();
       await assistants.loaded;
       final id = await assistants.addAssistant(name: 'Wallpaper');
       await assistants.setCurrentAssistant(id);

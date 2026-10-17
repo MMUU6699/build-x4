@@ -1,42 +1,26 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../../scheduled_tasks/pages/scheduled_tasks_page.dart';
 import 'package:flutter/material.dart';
-import '../../../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
-import '../../../icons/lucide_adapter.dart';
-import '../../../core/providers/settings_provider.dart';
-import '../../model/pages/default_model_page.dart';
-import '../../provider/pages/providers_page.dart';
-import 'display_settings_page.dart';
-import 'settings_search_page.dart';
-import '../widgets/settings_search_entry.dart';
-import '../../mcp/pages/mcp_page.dart';
-import '../../workspace/pages/skills_page.dart';
-import '../../workspace/pages/workspace_settings_page.dart';
-import '../../assistant/pages/assistant_settings_page.dart';
-import 'about_page.dart';
-import 'memory_settings_page.dart';
-import 'tts_services_page.dart';
-import 'tool_schema_settings_page.dart';
-import 'sponsor_page.dart';
-import 'log_viewer_page.dart';
-import '../../search/pages/search_services_page.dart';
-import '../../backup/pages/backup_page.dart';
-import '../../quick_phrase/pages/quick_phrases_page.dart';
-import '../../instruction_injection/pages/instruction_injection_page.dart';
-import '../../world_book/pages/world_book_page.dart';
-import '../../../shared/widgets/section_card.dart';
-import 'network_proxy_page.dart';
-import 'phone_control_settings_page.dart';
-import '../../home/services/local_tools_service.dart';
-import 'storage_space_page.dart';
-import '../../stats/pages/stats_page.dart';
-import '../../../core/services/storage/storage_usage_service.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../../core/services/haptics.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
+
+import '../../../core/providers/settings_provider.dart';
+import '../../../core/providers/user_provider.dart';
+import '../../../core/services/haptics.dart';
+import '../../../core/services/storage/storage_usage_service.dart';
+import '../../../icons/lucide_adapter.dart';
+import '../../../l10n/app_localizations.dart';
+import '../../../shared/widgets/section_card.dart';
+import '../../assistant/pages/assistant_settings_page.dart';
+import '../../stats/pages/stats_page.dart';
+import '../../workspace/pages/skills_page.dart';
+import '../../workspace/pages/workspace_settings_page.dart';
+import '../widgets/settings_search_entry.dart';
+import 'about_page.dart';
+import 'account_profile_page.dart';
+import 'display_settings_page.dart';
+import 'log_viewer_page.dart';
+import 'settings_search_page.dart';
+import 'storage_space_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -138,35 +122,106 @@ class SettingsPage extends StatelessWidget {
           onColorMode: pickThemeMode,
         ),
         children: [
-          if (!settings.hasAnyActiveModel)
-            Material(
-              color: cs.errorContainer.withValues(alpha: 0.30),
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
+          // User Account Profile Card
+          Builder(
+            builder: (ctx) {
+              final user = ctx.watch<UserProvider>();
+              final isDark = Theme.of(ctx).brightness == Brightness.dark;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: SectionCard(
                   children: [
-                    Icon(
-                      Lucide.MessageCircleWarning,
-                      size: 18,
-                      color: cs.error,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        l10n.settingsPageWarningMessage,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: cs.onSurface.withValues(alpha: 0.8),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const AccountProfilePage(),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isDark
+                                    ? const Color(0xFF2C2C2A)
+                                    : const Color(0xFFEFECE6),
+                                border: Border.all(
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.10)
+                                      : Colors.black.withValues(alpha: 0.07),
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                user.avatarType == 'emoji' &&
+                                        (user.avatarValue?.isNotEmpty ?? false)
+                                    ? user.avatarValue!
+                                    : '⚡',
+                                style: const TextStyle(fontSize: 24),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    user.name.isNotEmpty
+                                        ? user.name
+                                        : 'Build X User',
+                                    style: TextStyle(
+                                      fontSize: 16.5,
+                                      fontWeight: AppFontWeights.emphasis,
+                                      color: cs.onSurface,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    user.roleOrBio.isNotEmpty
+                                        ? user.roleOrBio
+                                        : (user.email.isNotEmpty
+                                              ? user.email
+                                              : 'Edit Profile'),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: cs.onSurface.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Lucide.ChevronRight,
+                              size: 18,
+                              color: cs.onSurface.withValues(alpha: 0.35),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
+              );
+            },
+          ),
 
-          // 通用设置：使用iOS风格分组卡片，黑色（中性）图标与标题，无描述
+          // General Settings
           header(l10n.settingsPageGeneralSection, first: true),
           SectionCard(
             children: [
@@ -212,63 +267,6 @@ class SettingsPage extends StatelessWidget {
             children: [
               _iosNavRow(
                 context,
-                icon: Lucide.Heart,
-                label: l10n.settingsPageDefaultModel,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const DefaultModelPage()),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Boxes,
-                label: l10n.settingsPageProviders,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ProvidersPage()),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Earth,
-                label: l10n.settingsPageSearch,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SearchServicesPage(),
-                    ),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Volume2,
-                label: l10n.settingsPageTts,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TtsServicesPage()),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Terminal,
-                label: l10n.settingsPageMcp,
-                onTap: () {
-                  Navigator.of(
-                    context,
-                  ).push(MaterialPageRoute(builder: (_) => const McpPage()));
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
                 icon: Lucide.FolderCode,
                 label: l10n.settingsPageWorkspace,
                 onTap: () {
@@ -280,20 +278,6 @@ class SettingsPage extends StatelessWidget {
                 },
               ),
               _iosDivider(context),
-              if (defaultTargetPlatform == TargetPlatform.android ||
-                  defaultTargetPlatform == TargetPlatform.iOS) ...[
-                _iosNavRow(
-                  context,
-                  icon: LucideIcons.clock,
-                  label: l10n.scheduledTasksTitle,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const ScheduledTasksPage(),
-                    ),
-                  ),
-                ),
-                _iosDivider(context),
-              ],
               _iosNavRow(
                 context,
                 icon: Lucide.WandSparkles,
@@ -304,74 +288,6 @@ class SettingsPage extends StatelessWidget {
                   ).push(MaterialPageRoute(builder: (_) => const SkillsPage()));
                 },
               ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.BookOpen,
-                label: l10n.settingsPageWorldBook,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const WorldBookPage()),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Brain,
-                label: l10n.settingsPageMemory,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const MemorySettingsPage(),
-                    ),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              if (DeviceLocalTools.phoneControlSupported) ...[
-                _iosNavRow(
-                  context,
-                  icon: Lucide.Smartphone,
-                  label: l10n.phoneControlTitle,
-                  onTap: () => PhoneControlSettingsPage.open(context),
-                ),
-                _iosDivider(context),
-              ],
-              _iosNavRow(
-                context,
-                icon: Lucide.Zap,
-                label: l10n.settingsPageQuickPhrase,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const QuickPhrasesPage()),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Layers,
-                label: l10n.settingsPageInstructionInjection,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const InstructionInjectionPage(),
-                    ),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.EthernetPort,
-                label: l10n.settingsPageNetworkProxy,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const NetworkProxyPage()),
-                  );
-                },
-              ),
             ],
           ),
 
@@ -379,17 +295,6 @@ class SettingsPage extends StatelessWidget {
           header(l10n.settingsPageDataSection),
           SectionCard(
             children: [
-              _iosNavRow(
-                context,
-                icon: Lucide.Database,
-                label: l10n.settingsPageBackup,
-                onTap: () {
-                  Navigator.of(
-                    context,
-                  ).push(MaterialPageRoute(builder: (_) => const BackupPage()));
-                },
-              ),
-              _iosDivider(context),
               _iosNavRow(
                 context,
                 icon: Lucide.HardDrive,
@@ -429,18 +334,6 @@ class SettingsPage extends StatelessWidget {
                   ).push(MaterialPageRoute(builder: (_) => const StatsPage()));
                 },
               ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Library,
-                label: l10n.settingsPageDocs,
-                onTap: () async {
-                  final uri = Uri.parse('https://kelivo.psycheas.top/');
-                  if (!await launchUrl(uri, mode: LaunchMode.platformDefault)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                },
-              ),
               if (settings.requestLogEnabled ||
                   settings.flutterLogEnabled ||
                   settings.contextLogEnabled) ...[
@@ -456,30 +349,6 @@ class SettingsPage extends StatelessWidget {
                   },
                 ),
               ],
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Wrench,
-                label: l10n.toolSchemaSettingsPageTitle,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const ToolSchemaSettingsPage(),
-                    ),
-                  );
-                },
-              ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Heart,
-                label: l10n.settingsPageSponsor,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SponsorPage()),
-                  );
-                },
-              ),
               // _iosDivider(context),
               // _iosNavRow(
               //   context,

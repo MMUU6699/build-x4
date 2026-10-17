@@ -14,9 +14,7 @@ void main() {
   testWidgets(
     'static toggle persists and position dragging only writes on release',
     (tester) async {
-      final assistants = AssistantProvider(
-        preferences: createBusinessTestPreferences(),
-      );
+      final assistants = AssistantProvider();
       await assistants.loaded;
       final id = await assistants.addAssistant(name: 'Gradient');
       await assistants.setCurrentAssistant(id);

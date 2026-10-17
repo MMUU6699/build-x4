@@ -23,10 +23,7 @@ Widget _harness(Widget child) {
       ChangeNotifierProvider(
         create: (_) => SettingsProvider(createBusinessTestPreferences()),
       ),
-      ChangeNotifierProvider(
-        create: (_) =>
-            UserProvider(preferences: createBusinessTestPreferences()),
-      ),
+      ChangeNotifierProvider(create: (_) => UserProvider()),
     ],
     child: MaterialApp(
       locale: const Locale('en'),

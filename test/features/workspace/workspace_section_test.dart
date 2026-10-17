@@ -2,17 +2,13 @@ import 'dart:io';
 
 import 'package:Kelivo/desktop/workspace_dialog.dart';
 
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/models/workspace_binding.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
-import 'package:Kelivo/core/providers/environment_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/providers/workspace_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
-import 'package:Kelivo/core/services/sandbox/environment_manager.dart';
 import 'package:Kelivo/core/services/workspace/workspace_runtime.dart';
 import 'package:Kelivo/core/services/workspace/workspace_binding_actions.dart';
 import 'package:Kelivo/features/chat/widgets/tools_sheet_row.dart';
@@ -25,7 +21,6 @@ import 'package:Kelivo/icons/lucide_adapter.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:Kelivo/shared/widgets/custom_bottom_sheet.dart';
 import 'package:Kelivo/shared/widgets/snackbar.dart';
-import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -97,7 +92,7 @@ class _FakeChatService extends ChatService {
   Future<Conversation> createDraftConversation({
     String? title,
     String? assistantId,
-    bool temporary = false,
+    bool? temporary,
     bool reuseNewEntry = false,
   }) async {
     final draft = Conversation(
@@ -156,29 +151,21 @@ void main() {
 
   late Directory tempDir;
   late PathProviderPlatform previousPathProvider;
-  late AppDatabase database;
   late WorkspaceProvider workspaces;
-  late EnvironmentProvider environment;
   late SettingsProvider settings;
 
   setUp(() async {
     tempDir = Directory.systemTemp.createTempSync('kelivo_workspace_section_');
     previousPathProvider = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
-    database = AppDatabase(NativeDatabase.memory());
-    await database.customSelect('SELECT 1;').getSingle();
-    workspaces = WorkspaceProvider(store: ExtensionEntityStore(database));
+    workspaces = WorkspaceProvider();
     await workspaces.loaded;
     settings = SettingsProvider(createBusinessTestPreferences());
-    environment = EnvironmentProvider(
-      preferences: createBusinessTestPreferences(),
-    );
-    await environment.loaded;
   });
 
   tearDown(() async {
     PathProviderPlatform.instance = previousPathProvider;
-    await database.close();
+    workspaces.dispose();
     if (tempDir.existsSync()) {
       tempDir.deleteSync(recursive: true);
     }
@@ -202,16 +189,10 @@ void main() {
           ChangeNotifierProvider<WorkspaceRuntimeProvider>(
             create: (_) => WorkspaceRuntimeProvider(),
           ),
-          ChangeNotifierProvider<EnvironmentProvider>.value(value: environment),
           if (assistants != null)
             ChangeNotifierProvider<AssistantProvider>.value(value: assistants)
           else
-            ChangeNotifierProvider(
-              create: (_) => AssistantProvider(
-                preferences: createBusinessTestPreferences(),
-              ),
-            ),
-          Provider<EnvironmentManager?>.value(value: null),
+            ChangeNotifierProvider(create: (_) => AssistantProvider()),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -249,9 +230,7 @@ void main() {
     String? defaultWorkspaceId,
   }) async {
     final created = await tester.runAsync(() async {
-      final assistants = AssistantProvider(
-        preferences: createBusinessTestPreferences(),
-      );
+      final assistants = AssistantProvider();
       await assistants.loaded;
       final id = await assistants.addAssistant(name: 'Coder');
       if (defaultWorkspaceId != null) {
@@ -282,14 +261,10 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider<SettingsProvider>.value(value: settings),
-          ChangeNotifierProvider(
-            create: (_) =>
-                AssistantProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider(create: (_) => AssistantProvider()),
           ChangeNotifierProvider<WorkspaceProvider>.value(value: workspaces),
           ChangeNotifierProvider<ChatService>.value(value: chat),
           ChangeNotifierProvider(create: (_) => WorkspaceRuntimeProvider()),
-          ChangeNotifierProvider<EnvironmentProvider>.value(value: environment),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -796,81 +771,6 @@ void main() {
     DefaultWorkspaceSetup.automatic,
     DefaultWorkspaceSetup.suggest,
   ]) {
-    for (final changeBeforeNotice in [false, true]) {
-      testWidgets(
-        '$setup toast survives search changes ${changeBeforeNotice ? 'before' : 'after'} display',
-        (tester) async {
-          final workspace = await tester.runAsync(
-            () => workspaces.create(name: 'Desk'),
-          );
-          if (workspace == null) fail('workspace create failed');
-          final (assistants, assistantId) = await createAssistant(tester);
-          await tester.runAsync(() async {
-            await assistants.setCurrentAssistant(assistantId);
-            await assistants.updateAssistant(
-              assistants
-                  .getById(assistantId)!
-                  .copyWith(defaultWorkspaceSetup: setup),
-            );
-          });
-          final chat = _FakeChatService(
-            Conversation(title: 'Chat', assistantId: assistantId),
-          );
-          final l10n = await pumpSection(
-            tester,
-            chat: chat,
-            assistants: assistants,
-          );
-          final notice = await tester.runAsync(
-            () => bindConversationWorkspace(
-              chat,
-              assistants: assistants,
-              conversationId: chat.conversation!.id,
-              workspace: workspace,
-            ),
-          );
-          if (changeBeforeNotice) {
-            await tester.runAsync(
-              () => assistants.setSearchEnabledForCurrentAssistant(true),
-            );
-          }
-          showWorkspaceDefaultNotice(
-            tester.element(find.byType(Scaffold)),
-            notice: notice,
-            workspaceId: workspace.id,
-          );
-          await tester.pumpAndSettle();
-          if (!changeBeforeNotice) {
-            await tester.runAsync(
-              () => assistants.setSearchEnabledForCurrentAssistant(true),
-            );
-          }
-          final remembered = setup == DefaultWorkspaceSetup.automatic;
-          final action = find.text(
-            remembered
-                ? l10n.workspaceBindingUndoDefault
-                : l10n.workspaceBindingUseAsDefault,
-          );
-          final actionVisible = action.evaluate().isNotEmpty;
-          if (actionVisible) {
-            await tester.tap(action);
-            await tester.pumpAndSettle();
-          }
-          await tester.pump(const Duration(seconds: 9));
-          await tester.pumpAndSettle();
-
-          expect(actionVisible, isTrue);
-          final current = assistants.getById(assistantId)!;
-          expect(current.defaultWorkspaceId, remembered ? null : workspace.id);
-          expect(current.searchEnabled, isTrue);
-          expect(
-            WorkspaceBinding.fromExtras(chat.conversation!.extras).workspaceId,
-            workspace.id,
-          );
-        },
-      );
-    }
-
     testWidgets('stale $setup toast cannot overwrite an explicit choice', (
       tester,
     ) async {
@@ -965,12 +865,7 @@ void main() {
           ChangeNotifierProvider<WorkspaceRuntimeProvider>(
             create: (_) => WorkspaceRuntimeProvider(),
           ),
-          ChangeNotifierProvider<EnvironmentProvider>.value(value: environment),
-          ChangeNotifierProvider(
-            create: (_) =>
-                AssistantProvider(preferences: createBusinessTestPreferences()),
-          ),
-          Provider<EnvironmentManager?>.value(value: null),
+          ChangeNotifierProvider(create: (_) => AssistantProvider()),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -1030,15 +925,7 @@ void main() {
             ChangeNotifierProvider<WorkspaceRuntimeProvider>(
               create: (_) => WorkspaceRuntimeProvider(),
             ),
-            ChangeNotifierProvider<EnvironmentProvider>.value(
-              value: environment,
-            ),
-            ChangeNotifierProvider(
-              create: (_) => AssistantProvider(
-                preferences: createBusinessTestPreferences(),
-              ),
-            ),
-            Provider<EnvironmentManager?>.value(value: null),
+            ChangeNotifierProvider(create: (_) => AssistantProvider()),
           ],
           child: MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,

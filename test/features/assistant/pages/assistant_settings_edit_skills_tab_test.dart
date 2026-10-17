@@ -49,14 +49,14 @@ void main() {
       skillsDirectory: tempDir,
     );
 
-    final harness = await createBusinessTestHarness(
+    await createBusinessTestHarness(
       initial: {
         'assistants_v1': Assistant.encodeList([
           Assistant(id: _assistantId, name: 'Skills Assistant'),
         ]),
       },
     );
-    final ap = AssistantProvider(preferences: harness.preferences);
+    final ap = AssistantProvider();
     await tester.runAsync(() => ap.loaded);
     expect(ap.getById(_assistantId)?.skillIds, isNull);
 
@@ -135,14 +135,14 @@ void main() {
       parent: tempDir,
     );
     final skills = FakeSkillsService(skills: [keep], skillsDirectory: tempDir);
-    final harness = await createBusinessTestHarness(
+    await createBusinessTestHarness(
       initial: {
         'assistants_v1': Assistant.encodeList([
           Assistant(id: _assistantId, name: 'Skills Assistant'),
         ]),
       },
     );
-    final ap = AssistantProvider(preferences: harness.preferences);
+    final ap = AssistantProvider();
     await tester.runAsync(() => ap.loaded);
 
     tester.view.physicalSize = const Size(400, 900);

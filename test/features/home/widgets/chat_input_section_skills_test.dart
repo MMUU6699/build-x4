@@ -3,10 +3,8 @@ import 'dart:io';
 import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/models/skills_binding.dart';
-import 'package:Kelivo/core/providers/asr_provider.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/mcp_provider.dart';
-import 'package:Kelivo/core/providers/quick_phrase_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
 import 'package:Kelivo/core/services/skills/skills_service.dart';
@@ -46,12 +44,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final preferences = createBusinessTestPreferences();
-    await preferences.setString(
-      'assistants_v1',
-      Assistant.encodeList([Assistant(id: 'a1', name: 'Assistant')]),
+    final assistants = AssistantProvider(
+      initialAssistants: const [Assistant(id: 'a1', name: 'Assistant')],
     );
-    await preferences.setString('current_assistant_id_v1', 'a1');
-    final assistants = AssistantProvider(preferences: preferences);
     await tester.runAsync(() => assistants.loaded);
     final skills = FakeSkillsService(
       skillsDirectory: tempDir,
@@ -79,13 +74,7 @@ void main() {
         providers: [
           ChangeNotifierProvider(create: (_) => SettingsProvider(preferences)),
           ChangeNotifierProvider.value(value: assistants),
-          ChangeNotifierProvider(create: (_) => AsrProvider()),
-          ChangeNotifierProvider(
-            create: (_) => McpProvider(preferences: preferences),
-          ),
-          ChangeNotifierProvider(
-            create: (_) => QuickPhraseProvider(preferences: preferences),
-          ),
+          ChangeNotifierProvider(create: (_) => McpProvider()),
           ChangeNotifierProvider<SkillsService>.value(value: skills),
           ChangeNotifierProvider<ChatService>.value(value: chat),
         ],

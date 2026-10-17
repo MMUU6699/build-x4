@@ -6,21 +6,9 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:http/http.dart' as http;
-import 'package:socks5_proxy/socks_client.dart' as socks;
 
 import '../logging/log_redactor.dart';
 import 'request_logger.dart';
-
-Future<InternetAddress?> _resolveProxyAddress(String host) async {
-  final parsed = InternetAddress.tryParse(host);
-  if (parsed != null) return parsed;
-  try {
-    final list = await InternetAddress.lookup(host);
-    return list.isNotEmpty ? list.first : null;
-  } catch (_) {
-    return null;
-  }
-}
 
 Future<Uint8List> _readLimited(Stream<List<int>> stream, int maxBytes) async {
   final out = BytesBuilder(copy: false);
@@ -34,22 +22,6 @@ Future<Uint8List> _readLimited(Stream<List<int>> stream, int maxBytes) async {
     }
   }
   return out.takeBytes();
-}
-
-ConnectionTask<Socket> _directConnection(Uri uri, SecurityContext? context) {
-  if (uri.scheme == 'https') {
-    final Future<SecureSocket> socket = SecureSocket.connect(
-      uri.host,
-      uri.port,
-      context: context,
-    );
-    return ConnectionTask.fromSocket(
-      socket,
-      () async => (await socket).close(),
-    );
-  }
-  final Future<Socket> socket = Socket.connect(uri.host, uri.port);
-  return ConnectionTask.fromSocket(socket, () async => (await socket).close());
 }
 
 class NetworkProxyConfig {
@@ -98,53 +70,14 @@ class DioHttpClient extends http.BaseClient {
             client.idleTimeout = const Duration(days: 3650);
             if (_proxy?.isValid == true) {
               final p = _proxy!;
-              if (p.type == 'socks5') {
-                Future<InternetAddress?>? proxyAddrFuture;
-                client.connectionFactory = (uri, proxyHost, proxyPort) async {
-                  proxyAddrFuture ??= _resolveProxyAddress(p.host);
-                  final proxyAddr = await proxyAddrFuture;
-                  if (proxyAddr == null) {
-                    return _directConnection(uri, null);
-                  }
-
-                  final proxies = <socks.ProxySettings>[
-                    socks.ProxySettings(
-                      proxyAddr,
-                      p.port,
-                      username: p.username,
-                      password: p.password,
-                    ),
-                  ];
-
-                  final socket = socks.SocksTCPClient.connect(
-                    proxies,
-                    InternetAddress(uri.host, type: InternetAddressType.unix),
-                    uri.port,
-                  );
-
-                  if (uri.scheme == 'https') {
-                    final Future<SecureSocket> secureSocket;
-                    return ConnectionTask.fromSocket(
-                      secureSocket = (await socket).secure(uri.host),
-                      () async => (await secureSocket).close(),
-                    );
-                  }
-
-                  return ConnectionTask.fromSocket(
-                    socket,
-                    () async => (await socket).close(),
-                  );
-                };
-              } else {
-                client.findProxy = (_) => 'PROXY ${p.host}:${p.port}';
-                if (p.username != null && p.username!.trim().isNotEmpty) {
-                  client.addProxyCredentials(
-                    p.host,
-                    p.port,
-                    '',
-                    HttpClientBasicCredentials(p.username!, p.password ?? ''),
-                  );
-                }
+              client.findProxy = (_) => 'PROXY ${p.host}:${p.port}';
+              if (p.username != null && p.username!.trim().isNotEmpty) {
+                client.addProxyCredentials(
+                  p.host,
+                  p.port,
+                  '',
+                  HttpClientBasicCredentials(p.username!, p.password ?? ''),
+                );
               }
             }
             return client;

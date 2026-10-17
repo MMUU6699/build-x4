@@ -1,4 +1,3 @@
-import '../../../core/services/scheduled_tasks_service.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -14,8 +13,6 @@ import '../../../core/services/api/chat_api_service.dart';
 import '../../../core/services/chat/chat_service.dart';
 import '../../../core/services/logging/flutter_logger.dart';
 import '../../../core/services/model_spec/model_spec_resolver.dart';
-import '../../../core/services/memory/memory_pipeline.dart';
-import '../../../core/services/memory/memory_trace.dart';
 import '../../../utils/utf16_safe_cut.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../chat/widgets/chat_message_widget.dart' show ToolUIPart;
@@ -323,32 +320,7 @@ class HomeViewModel extends ChangeNotifier {
 
   /// Schedule background memory organize after a successful finalize (§12.1).
   /// Never awaited; failures must not surface as chat errors.
-  void _onMaybeOrganizeMemory(String conversationId) {
-    try {
-      final settings = _contextProvider.read<SettingsProvider>();
-      if (settings.legacyMemoryMode) return;
-      final convo = _chatService.getConversation(conversationId);
-      if (convo == null) return;
-      final assistantProvider = _contextProvider.read<AssistantProvider>();
-      final assistant = assistantProvider.resolveConversationAssistant(
-        convo.assistantId,
-      );
-      if (assistant == null || !assistant.enableMemory) return;
-      if (!assistant.autoOrganizeMemory) return;
-      final pipeline = _contextProvider.read<MemoryPipelineService>();
-      pipeline.scheduleIfNeeded(
-        conversationId: conversationId,
-        assistantId: assistant.id,
-        onError: (error) =>
-            onBackgroundTaskError?.call(BackgroundTaskKind.memory, error),
-      );
-    } catch (e, st) {
-      FlutterLogger.log(
-        '[MemoryPipeline] schedule failed: $e\n$st',
-        tag: 'HomeViewModel',
-      );
-    }
-  }
+  void _onMaybeOrganizeMemory(String conversationId) {}
 
   /// Drops the indicator immediately, ignoring the minimum-visible hold. Used
   /// when the conversation the indicator belonged to is no longer on screen.
@@ -425,7 +397,6 @@ class HomeViewModel extends ChangeNotifier {
     if (input.draftSubmission != null && sourceConversation == null) {
       return ChatInputSubmissionResult.rejected;
     }
-    await ScheduledTasksService.instance.reconcileBeforeSend();
     final content = input.text.trim();
     if (content.isEmpty &&
         input.imagePaths.isEmpty &&
@@ -504,11 +475,10 @@ class HomeViewModel extends ChangeNotifier {
     );
 
     if (input.draftSubmission != null &&
-        _chatService.composerDrafts != null &&
-        await _chatService.composerDrafts!.wasSubmitted(
+        await _chatService.composerDrafts.wasSubmitted(
           input.draftSubmission!.id,
         )) {
-      await _chatService.composerDrafts!.finishSubmission(
+      await _chatService.composerDrafts.finishSubmission(
         input.draftSubmission!,
       );
       return true;
@@ -555,7 +525,7 @@ class HomeViewModel extends ChangeNotifier {
 
     final input = queued.input;
     final drafts = _chatService.composerDrafts;
-    drafts?.submitting.add(conversationId);
+    drafts.submitting.add(conversationId);
     try {
       final success = await _sendMessageToConversation(input, conversation);
       if (!success && _chatService.getConversation(conversationId) != null) {
@@ -563,15 +533,13 @@ class HomeViewModel extends ChangeNotifier {
       }
     } catch (_) {
       final submission = input.draftSubmission;
-      if (drafts != null &&
-          submission != null &&
-          await drafts.wasSubmitted(submission.id)) {
+      if (submission != null && await drafts.wasSubmitted(submission.id)) {
         await drafts.finishSubmission(submission);
       } else if (_chatService.getConversation(conversationId) != null) {
         _queuedInput = queued;
       }
     } finally {
-      drafts?.submissionIdle(conversationId);
+      drafts.submissionIdle(conversationId);
       _isDrainingQueuedInput = false;
       notifyListeners();
     }
@@ -1096,7 +1064,7 @@ class HomeViewModel extends ChangeNotifier {
     final a = ap.getById(targetAssistantId ?? '');
 
     final existingEntryId = _chatService.composerDrafts
-        ?.newEntry(targetAssistantId)
+        .newEntry(targetAssistantId)
         ?.id;
     final conversation = await _chatService.createDraftConversation(
       title: getTitleForLocale(_contextProvider),
@@ -1718,18 +1686,6 @@ class HomeViewModel extends ChangeNotifier {
 
     final reasoning = settings.summaryGenerationReasoningFor(assistant);
 
-    final legacy = settings.legacyMemoryMode;
-    if (legacy) {
-      if (assistant?.allowPastConversationRecall != true) return;
-    } else if (!MemoryPipelineService.shouldGenerateConversationSummary(
-      allowPastConversationRecall:
-          assistant?.allowPastConversationRecall == true,
-      generateConversationSummary:
-          assistant?.generateConversationSummary == true,
-    )) {
-      return;
-    }
-
     final triggerMessageCount =
         assistant?.recentChatsSummaryMessageCount ??
         Assistant.defaultRecentChatsSummaryMessageCount;
@@ -1764,8 +1720,6 @@ class HomeViewModel extends ChangeNotifier {
     // Get previous summary (empty string if first time)
     final previousSummary = (convo.summary ?? '').trim();
 
-    // Get only the recent user messages since last summarization
-    // Calculate how many user messages were in the last summarized state
     final lastSummarizedMsgCount = (convo.lastSummarizedMessageCount < 0)
         ? 0
         : convo.lastSummarizedMessageCount;
@@ -1791,12 +1745,6 @@ class HomeViewModel extends ChangeNotifier {
         .replaceAll('{previous_summary}', previousSummary)
         .replaceAll('{user_messages}', content);
 
-    final traceHandle = legacy ? null : _beginSummaryTrace(convo, assistant);
-    final traceStep = traceHandle?.beginStep(
-      MemoryTraceStepKind.conversationSummary,
-    );
-    traceStep?.appendPrompt(prompt);
-
     try {
       final summary = (await ChatApiService.generateText(
         conversationId: convo.id,
@@ -1806,7 +1754,6 @@ class HomeViewModel extends ChangeNotifier {
         reasoning: reasoning,
         skipImageParsing: true,
       )).trim();
-      traceStep?.appendResponse(summary);
 
       if (summary.isNotEmpty) {
         await _chatService.updateConversationSummary(
@@ -1814,18 +1761,6 @@ class HomeViewModel extends ChangeNotifier {
           summary,
           msgCount,
         );
-        traceStep?.addMutation(
-          MemoryTraceMutation(
-            kind: MemoryTraceMutationKind.conversationSummaryWritten,
-            targetId: convo.id,
-            before: previousSummary.isEmpty ? null : previousSummary,
-            after: summary,
-          ),
-        );
-      }
-      traceStep?.finish(MemoryTraceStepStatus.success);
-      traceHandle?.commit(advanced: summary.isNotEmpty);
-      if (summary.isNotEmpty) {
         if (currentConversation?.id == convo.id) {
           _chatController.updateCurrentConversation(
             _chatService.getConversation(convo.id),
@@ -1839,36 +1774,7 @@ class HomeViewModel extends ChangeNotifier {
         );
       }
     } catch (e) {
-      // Keep the old summary when background generation fails.
-      traceStep?.finish(MemoryTraceStepStatus.failed, error: e.toString());
-      traceHandle?.commit(error: e.toString());
       onBackgroundTaskError?.call(BackgroundTaskKind.summary, e);
-    }
-  }
-
-  /// Open a trace for background summary generation (feeds past-conversation
-  /// recall). Never throws.
-  MemoryTraceHandle? _beginSummaryTrace(
-    Conversation convo,
-    Assistant? assistant,
-  ) {
-    // Temporary chats are discarded on exit; keep their traces out of the UI.
-    if (_chatService.isTemporaryConversation(convo.id)) {
-      return null;
-    }
-    try {
-      return MemoryTraceRecorder.instance.begin(
-        trigger: MemoryTraceTrigger.conversationSummary,
-        scope: assistant == null
-            ? MemoryTraceScope.global
-            : memoryTraceScopeOf(assistant.memoryWriteScope),
-        conversationId: convo.id,
-        conversationTitle: convo.title,
-        assistantId: assistant?.id,
-        assistantName: assistant?.name,
-      );
-    } catch (_) {
-      return null;
     }
   }
 

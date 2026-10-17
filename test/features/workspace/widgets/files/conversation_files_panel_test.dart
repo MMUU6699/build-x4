@@ -1,7 +1,5 @@
 import 'dart:io';
 
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/message_part.dart';
@@ -16,7 +14,6 @@ import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:Kelivo/shared/widgets/segmented_tabs.dart';
 import 'package:Kelivo/shared/widgets/snackbar.dart';
 import 'package:Kelivo/utils/app_directories.dart';
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -56,8 +53,8 @@ class _FakeChatService extends ChatService {
   @override
   Future<List<ChatMessage>> loadMessagesRange(
     String conversationId, {
-    required int start,
-    required int limit,
+    int start = 0,
+    int limit = 50,
     bool cacheInTimeline = true,
   }) async => messages.skip(start).take(limit).toList();
 
@@ -107,22 +104,19 @@ void main() {
 
   late Directory tempDir;
   late PathProviderPlatform previousPathProvider;
-  late AppDatabase database;
   late WorkspaceProvider workspaces;
 
   setUp(() async {
     tempDir = Directory.systemTemp.createTempSync('kelivo_conv_files_');
     previousPathProvider = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
-    database = AppDatabase(NativeDatabase.memory());
-    await database.customSelect('SELECT 1;').getSingle();
-    workspaces = WorkspaceProvider(store: ExtensionEntityStore(database));
+    workspaces = WorkspaceProvider();
     await workspaces.loaded;
   });
 
   tearDown(() async {
     PathProviderPlatform.instance = previousPathProvider;
-    await database.close();
+    workspaces.dispose();
     if (tempDir.existsSync()) {
       tempDir.deleteSync(recursive: true);
     }
@@ -170,9 +164,7 @@ void main() {
     );
     if (workspace == null) fail('workspace create failed');
     final created = await tester.runAsync(() async {
-      final assistants = AssistantProvider(
-        preferences: createBusinessTestPreferences(),
-      );
+      final assistants = AssistantProvider();
       await assistants.loaded;
       final id = await assistants.addAssistant(name: 'Coder');
       return (assistants, id);

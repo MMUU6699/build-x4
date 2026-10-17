@@ -3,14 +3,11 @@ import 'dart:convert';
 import 'package:Kelivo/features/chat/widgets/produced_files_row.dart';
 import 'package:Kelivo/features/workspace/widgets/files/workspace_file_thumbnail.dart';
 
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/models/workspace.dart';
 import 'package:Kelivo/core/models/workspace_binding.dart';
@@ -37,7 +34,6 @@ class _Chat extends ChatService {
 
 void main() {
   late Directory root;
-  late AppDatabase db;
   late WorkspaceProvider workspaces;
   late Conversation conversation;
 
@@ -46,8 +42,7 @@ void main() {
     File(p.join(root.path, 'note.txt')).writeAsStringSync('preview content');
     Directory(p.join(root.path, 'folder')).createSync();
     File(p.join(root.path, 'folder', 'child.txt')).writeAsStringSync('child');
-    db = AppDatabase(NativeDatabase.memory());
-    workspaces = WorkspaceProvider(store: ExtensionEntityStore(db));
+    workspaces = WorkspaceProvider();
     await workspaces.loaded;
     final workspace = await workspaces.create(
       name: 'Files',
@@ -63,7 +58,6 @@ void main() {
 
   tearDown(() async {
     workspaces.dispose();
-    await db.close();
     root.deleteSync(recursive: true);
   });
 

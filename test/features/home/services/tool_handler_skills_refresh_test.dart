@@ -1,6 +1,10 @@
 import 'dart:io';
 
-import 'package:Kelivo/core/database/app_database.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:provider/provider.dart';
+
 import 'package:Kelivo/core/database/extension_entity_store.dart';
 import 'package:Kelivo/core/models/workspace.dart';
 import 'package:Kelivo/core/models/workspace_binding.dart';
@@ -20,11 +24,6 @@ import 'package:Kelivo/features/workspace/widgets/skills/conversation_skills_she
 import 'package:Kelivo/features/workspace/widgets/skills/skills_pane.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:Kelivo/utils/mcp_structured_image.dart';
-import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:path/path.dart' as p;
-import 'package:provider/provider.dart';
 
 import '../../../support/business_test_harness.dart';
 import '../../../support/fake_workspace_runtime.dart';
@@ -48,7 +47,6 @@ class _InstallingRuntime extends FakeWorkspaceRuntime {
 
 void main() {
   late Directory tmp;
-  late AppDatabase database;
   late WorkspaceProvider workspaces;
   late Workspace workspace;
   late SkillsService skills;
@@ -60,9 +58,8 @@ void main() {
     workspaceDir = Directory(p.join(tmp.path, 'workspace'))..createSync();
     sessionDir = Directory(p.join(tmp.path, 'session'))..createSync();
     Directory(p.join(sessionDir.path, 'outputs')).createSync();
-    database = AppDatabase(NativeDatabase.memory());
-    final store = ExtensionEntityStore(database);
-    workspaces = WorkspaceProvider(store: store);
+    final store = ExtensionEntityStore();
+    workspaces = WorkspaceProvider();
     workspace = await workspaces.create(
       name: 'Test',
       kind: WorkspaceKind.linked,
@@ -83,7 +80,6 @@ void main() {
   tearDown(() async {
     skills.dispose();
     workspaces.dispose();
-    await database.close();
     await tmp.delete(recursive: true);
   });
 
@@ -100,10 +96,8 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final settings = SettingsProvider(createBusinessTestPreferences());
-      final assistants = AssistantProvider(
-        preferences: createBusinessTestPreferences(),
-      );
-      final mcp = McpProvider(preferences: createBusinessTestPreferences());
+      final assistants = AssistantProvider();
+      final mcp = McpProvider();
       final toolService = McpToolService();
       final chat = FakeChatService();
       final runtime = _InstallingRuntime();
@@ -112,7 +106,6 @@ void main() {
       addTearDown(settings.dispose);
       addTearDown(assistants.dispose);
       addTearDown(mcp.dispose);
-      addTearDown(toolService.dispose);
       addTearDown(chat.dispose);
       addTearDown(runtimes.dispose);
       addTearDown(registry.dispose);
@@ -126,7 +119,7 @@ void main() {
             ChangeNotifierProvider<SettingsProvider>.value(value: settings),
             ChangeNotifierProvider<AssistantProvider>.value(value: assistants),
             ChangeNotifierProvider<McpProvider>.value(value: mcp),
-            ChangeNotifierProvider<McpToolService>.value(value: toolService),
+            Provider<McpToolService>.value(value: toolService),
             ChangeNotifierProvider<ChatService>.value(value: chat),
             ChangeNotifierProvider<WorkspaceProvider>.value(value: workspaces),
             ChangeNotifierProvider<WorkspaceRuntimeProvider>.value(

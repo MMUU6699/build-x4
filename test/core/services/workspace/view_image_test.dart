@@ -17,7 +17,23 @@ import 'package:Kelivo/core/services/workspace/workspace_tools_service.dart';
 import 'package:Kelivo/utils/mcp_structured_image.dart';
 import 'package:Kelivo/utils/sandbox_path_resolver.dart';
 
-import '../../../support/claude_test_api.dart' show FakePathProviderPlatform;
+class _FakePathProviderPlatform extends PathProviderPlatform {
+  _FakePathProviderPlatform(this.path);
+
+  final String path;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => path;
+
+  @override
+  Future<String?> getApplicationSupportPath() async => path;
+
+  @override
+  Future<String?> getApplicationCachePath() async => '$path/cache';
+
+  @override
+  Future<String?> getTemporaryPath() async => '$path/tmp';
+}
 
 void main() {
   late Directory tmp;
@@ -33,7 +49,7 @@ void main() {
     session = Directory(p.join(tmp.path, 'session'))..createSync();
     skills = Directory(p.join(tmp.path, 'skills'))..createSync();
     originalPaths = PathProviderPlatform.instance;
-    PathProviderPlatform.instance = FakePathProviderPlatform(tmp.path);
+    PathProviderPlatform.instance = _FakePathProviderPlatform(tmp.path);
     SandboxPathResolver.debugSetDirs(docsDir: tmp.path);
     service = WorkspaceToolsService();
   });

@@ -4,11 +4,8 @@ import '../../../core/services/incoming_share_service.dart';
 import 'composer_attachment_card.dart';
 import 'dart:collection';
 import 'dart:ui' as ui;
-import 'dart:math' as math;
 import '../../../theme/design_tokens.dart';
 import '../../../icons/lucide_adapter.dart';
-import '../../../icons/reasoning_icons.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../../l10n/app_localizations.dart';
 import 'package:image_picker/image_picker.dart';
@@ -21,21 +18,11 @@ import '../../../shared/responsive/breakpoints.dart';
 import 'dart:async';
 import 'dart:io';
 import '../../../core/models/chat_input_data.dart';
-import '../../../core/models/model_spec.dart';
 import '../../../core/models/reasoning_request.dart';
-import '../../../core/services/api/reasoning/reasoning_level_options.dart';
-import '../../chat/widgets/reasoning_level_sheet.dart';
 import '../../../utils/clipboard_images.dart';
-import '../../../core/providers/asr_provider.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/providers/assistant_provider.dart';
-import '../../../core/services/search/search_service.dart';
-import '../../../core/services/api/builtin_tools.dart';
 import '../../../core/services/api/chat_api_service.dart';
-import '../../../core/services/api/native_input_attachments.dart';
-import '../../../core/services/asr/asr_service_options.dart';
 import '../../../core/utils/multimodal_input_utils.dart';
-import '../../../utils/brand_assets.dart';
 import '../../../utils/sandbox_path_resolver.dart';
 import '../../../shared/widgets/interactive_drawer.dart';
 import '../../../shared/widgets/ios_tactile.dart';
@@ -43,8 +30,6 @@ import '../../../shared/widgets/snackbar.dart';
 import '../../../utils/app_directories.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:re_editor/re_editor.dart' show CodeEditorTapRegion;
-import '../../../desktop/desktop_context_menu.dart';
-import '../../../shared/widgets/context_usage_ring.dart';
 import '../../../shared/widgets/long_message_editor.dart';
 import '../services/context_usage_service.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
@@ -439,7 +424,7 @@ class ChatInputBar extends StatefulWidget {
   final Widget? modelIcon;
   final TextEditingController? controller;
   final ChatInputBarController? mediaController;
-  final AsrProvider? asrProvider;
+  final dynamic asrProvider;
   final bool loading;
   final bool hasQueuedInput;
   final String? queuedPreviewText;
@@ -500,7 +485,7 @@ class _ChatInputBarState extends State<ChatInputBar>
 
   // Expanding grows the whole composer to fill the height its host allows,
   // so attachments, tools and send stay in reach while editing long text.
-  static const int _collapsedMaxLines = 5;
+  static const int _collapsedMaxLines = 6;
   static const double _expandButtonExtent = 28; // 16 glyph + 2 × 6 padding
   bool _isExpanded = false;
   bool _canExpand = false;
@@ -526,20 +511,13 @@ class _ChatInputBarState extends State<ChatInputBar>
   // composer presentation and an exact snapshot used by Cancel.
   final List<double> _voiceLevels = <double>[];
   final ValueNotifier<int> _voiceLevelsVersion = ValueNotifier<int>(0);
-  static const int _maxVoiceLevels = 400;
-  Timer? _voiceLevelTimer;
   TextEditingValue? _voiceBaseValue;
   bool _ownsVoiceSession = false;
   bool _finishingVoice = false;
   // Fixed when a recording starts: whether it runs a recognizer (otherwise it
   // only records), and whether it can end as an audio attachment.
-  bool _voiceTranscribes = true;
-  bool _voiceCanSaveAudio = false;
-  bool _savingVoiceAudio = false;
   // Bumped when a recording starts or is cancelled, so a finish that resolves
   // late can tell its recording is gone and must not touch the draft.
-  int _voiceSessionSerial = 0;
-  String? _lastReportedVoiceError;
   final List<_DraftImage> _images = <_DraftImage>[];
   final Queue<_ImageProcessingTask> _imageProcessingQueue =
       Queue<_ImageProcessingTask>();
@@ -559,13 +537,6 @@ class _ChatInputBarState extends State<ChatInputBar>
   final Map<LogicalKeyboardKey, Timer?> _repeatTimers = {};
   static const Duration _repeatInitialDelay = Duration(milliseconds: 300);
   static const Duration _repeatPeriod = Duration(milliseconds: 35);
-  // Anchor for the responsive overflow menu on the left action bar
-  final GlobalKey _leftOverflowAnchorKey = GlobalKey(
-    debugLabel: 'left-overflow-anchor',
-  );
-  final GlobalKey _contextMgmtAnchorKey = GlobalKey(
-    debugLabel: 'context-mgmt-anchor',
-  );
   static const double _imageRemoveButtonSize = 18;
   // Suppress context menu briefly after app resume to avoid flickering
   bool _suppressContextMenu = false;
@@ -580,33 +551,6 @@ class _ChatInputBarState extends State<ChatInputBar>
   bool get _composerLocked =>
       widget.hasQueuedInput ||
       (widget.mediaController?.restoringDraft ?? false);
-
-  Color _inputFillColor({
-    required ThemeData theme,
-    required bool backgroundImageActive,
-    required double lightOpacity,
-    required double darkOpacity,
-  }) {
-    final isDark = theme.brightness == Brightness.dark;
-    final configuredOpacity = (isDark ? darkOpacity : lightOpacity)
-        .clamp(0.0, 1.0)
-        .toDouble();
-    final backgroundRatio = isDark
-        ? 0.545 / SettingsProvider.defaultChatInputBackgroundOpacityDark
-        : 0.5296 / SettingsProvider.defaultChatInputBackgroundOpacityLight;
-    final targetOpacity = backgroundImageActive
-        ? configuredOpacity * backgroundRatio
-        : configuredOpacity;
-    final overlayAlpha = isDark ? (backgroundImageActive ? 0.09 : 0.07) : 0.02;
-    final overlayTint = isDark
-        ? theme.colorScheme.onSurface.withValues(alpha: overlayAlpha)
-        : theme.colorScheme.primary.withValues(alpha: overlayAlpha);
-    final baseAlpha = ((targetOpacity - overlayAlpha) / (1.0 - overlayAlpha))
-        .clamp(0.0, 1.0)
-        .toDouble();
-    final base = theme.colorScheme.surface.withValues(alpha: baseAlpha);
-    return Color.alphaBlend(overlayTint, base).withValues(alpha: targetOpacity);
-  }
 
   bool _supportsImagesApiRouting(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
@@ -659,6 +603,10 @@ class _ChatInputBarState extends State<ChatInputBar>
 
   String? _usageDraftConversationId;
   String? _usageDraftText;
+
+  void _handleAsrChanged() {}
+  void _abandonVoiceSession() {}
+  void _stopVoiceLevelSampling() {}
 
   void _syncUsageDraft() {
     if (!mounted) return;
@@ -1072,8 +1020,8 @@ class _ChatInputBarState extends State<ChatInputBar>
   }
 
   String _hint(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    return l10n.chatInputBarHint;
+    final isArabic = Localizations.localeOf(context).languageCode == 'ar';
+    return isArabic ? 'اكتب رسالتك إلى Build X...' : 'Reply to Build X...';
   }
 
   // ---------------------------------------------------------------------------
@@ -1212,461 +1160,6 @@ class _ChatInputBarState extends State<ChatInputBar>
   // ---------------------------------------------------------------------------
   // Voice input
   // ---------------------------------------------------------------------------
-
-  bool _modelAcceptsAudio(SettingsProvider settings) {
-    final providerKey = widget.chatModelProviderKey;
-    final modelId = widget.chatModelId;
-    if (providerKey == null || modelId == null) return false;
-    return acceptsNativeAudioInput(
-      settings.getProviderConfig(providerKey),
-      modelId,
-    );
-  }
-
-  Future<void> _startVoiceInput() async {
-    final asr = widget.asrProvider;
-    final settings = context.read<SettingsProvider>();
-    final selected = settings.selectedAsrService;
-    final recognizer = selected != null && asr != null && asr.canUse(selected)
-        ? selected
-        : null;
-    final canSaveAudio =
-        recognizer is! SystemAsrOptions && _modelAcceptsAudio(settings);
-    if (_composerLocked ||
-        widget.loading ||
-        _ownsVoiceSession ||
-        asr == null ||
-        asr.isActive ||
-        (recognizer == null && !canSaveAudio)) {
-      return;
-    }
-
-    final serial = ++_voiceSessionSerial;
-    _voiceBaseValue = _controller.value;
-    _ownsVoiceSession = true;
-    _finishingVoice = false;
-    _voiceTranscribes = recognizer != null;
-    _voiceCanSaveAudio = canSaveAudio;
-    _lastReportedVoiceError = null;
-    _voiceLevels.clear();
-    setState(() {});
-    widget.focusNode?.unfocus();
-
-    try {
-      await asr.start(recognizer);
-      if (mounted && serial == _voiceSessionSerial && asr.isListening) {
-        _startVoiceLevelSampling();
-      }
-    } catch (error) {
-      // A failed start can throw after its cleanup, when the user may already
-      // be recording again; only this attempt's own state may be undone.
-      if (!mounted || serial != _voiceSessionSerial) return;
-      _stopVoiceLevelSampling();
-      // Provider failures normally arrive through its listener first. This is
-      // the fallback for errors raised before the provider can publish state.
-      if (_ownsVoiceSession) {
-        final original = _voiceBaseValue;
-        if (original != null) _controller.value = original;
-        _voiceBaseValue = null;
-        _ownsVoiceSession = false;
-        _finishingVoice = false;
-        _voiceLevels.clear();
-        setState(() {});
-      }
-      if (_lastReportedVoiceError == null) _reportVoiceFailure(error);
-    }
-  }
-
-  void _handleAsrChanged() {
-    if (!mounted || !_ownsVoiceSession) return;
-    final asr = widget.asrProvider;
-    if (asr == null) return;
-
-    _applyVoiceTranscript(asr.transcript);
-    final error = asr.error;
-    if (error != null && error.trim().isNotEmpty) {
-      _stopVoiceLevelSampling();
-      _voiceBaseValue = null;
-      _ownsVoiceSession = false;
-      _finishingVoice = false;
-      _voiceLevels.clear();
-      _reportVoiceFailure(error);
-      scheduleMicrotask(asr.clearError);
-    } else if (!asr.isActive && !_finishingVoice) {
-      // Some system recognizers publish a final result and stop on their own.
-      _stopVoiceLevelSampling();
-      final detectedSpeech = asr.transcript.trim().isNotEmpty;
-      _voiceBaseValue = null;
-      _ownsVoiceSession = false;
-      _voiceLevels.clear();
-      if (!detectedSpeech) _reportNoSpeech();
-    }
-    setState(() {});
-    _ensureCaretVisible();
-  }
-
-  void _startVoiceLevelSampling() {
-    _voiceLevelTimer?.cancel();
-    _voiceLevelTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
-      if (!mounted || !_ownsVoiceSession || _finishingVoice) return;
-      final asr = widget.asrProvider;
-      if (asr?.isListening != true) return;
-      final level = asr!.soundLevel.clamp(0.0, 1.0).toDouble();
-      final previous = _voiceLevels.isEmpty ? 0.03 : _voiceLevels.last;
-      _voiceLevels.add(previous + (level - previous) * 0.55);
-      if (_voiceLevels.length > _maxVoiceLevels) _voiceLevels.removeAt(0);
-      _voiceLevelsVersion.value++;
-    });
-  }
-
-  void _stopVoiceLevelSampling() {
-    _voiceLevelTimer?.cancel();
-    _voiceLevelTimer = null;
-  }
-
-  void _applyVoiceTranscript(String transcript) {
-    final baseValue = _voiceBaseValue;
-    if (baseValue == null) return;
-    final text = _joinVoiceText(baseValue.text, transcript);
-    if (_controller.text == text) return;
-    _controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-      composing: TextRange.empty,
-    );
-  }
-
-  String _joinVoiceText(String base, String transcript) {
-    final spoken = transcript.trim();
-    if (spoken.isEmpty) return base;
-    if (base.isEmpty || RegExp(r'\s$').hasMatch(base)) return '$base$spoken';
-
-    final first = spoken.substring(0, 1);
-    final last = base.substring(base.length - 1);
-    final punctuation = RegExp(r'^[,.;:!?，。！？、；：)\]}>》」』】…]');
-    final cjk = RegExp(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]');
-    final separator =
-        punctuation.hasMatch(first) || cjk.hasMatch(first) || cjk.hasMatch(last)
-        ? ''
-        : ' ';
-    return '$base$separator$spoken';
-  }
-
-  /// Drops the recording when its draft is replaced (conversation switch,
-  /// restore, clear). The replacement owns the draft now, so nothing from the
-  /// recording — text, audio, or a send — may reach it.
-  void _abandonVoiceSession() {
-    if (!_ownsVoiceSession) return;
-    _voiceSessionSerial++;
-    _stopVoiceLevelSampling();
-    _voiceBaseValue = null;
-    _ownsVoiceSession = false;
-    _finishingVoice = false;
-    _savingVoiceAudio = false;
-    _voiceLevels.clear();
-    final asr = widget.asrProvider;
-    if (asr != null) {
-      unawaited(asr.cancel().catchError((Object _) {}));
-    }
-  }
-
-  Future<void> _cancelVoiceInput() async {
-    if (!_ownsVoiceSession) return;
-    _voiceSessionSerial++;
-    _stopVoiceLevelSampling();
-    final asr = widget.asrProvider;
-    final original = _voiceBaseValue;
-    _voiceBaseValue = null;
-    _ownsVoiceSession = false;
-    _finishingVoice = false;
-    _voiceLevels.clear();
-    if (original != null) _controller.value = original;
-    if (mounted) setState(() {});
-    try {
-      await asr?.cancel();
-    } catch (error) {
-      if (mounted) _reportVoiceFailure(error);
-    }
-  }
-
-  Future<void> _finishVoiceInput({required bool sendAfter}) async {
-    final asr = widget.asrProvider;
-    if (!_ownsVoiceSession || _finishingVoice || asr == null) return;
-    _stopVoiceLevelSampling();
-    final serial = _voiceSessionSerial;
-    bool superseded() => !mounted || serial != _voiceSessionSerial;
-    _finishingVoice = true;
-    setState(() {});
-
-    try {
-      final transcript = await asr.finish();
-      if (superseded()) return;
-      _applyVoiceTranscript(transcript);
-      final detectedSpeech = transcript.trim().isNotEmpty;
-      _voiceBaseValue = null;
-      _ownsVoiceSession = false;
-      _finishingVoice = false;
-      _voiceLevels.clear();
-      setState(() {});
-      _ensureCaretVisible();
-      if (!detectedSpeech) {
-        _reportNoSpeech();
-      } else if (sendAfter && _controller.text.trim().isNotEmpty) {
-        await _handleSend();
-      }
-    } catch (error) {
-      if (superseded()) return;
-      if (_ownsVoiceSession) {
-        _voiceBaseValue = null;
-        _ownsVoiceSession = false;
-        _voiceLevels.clear();
-        setState(() {});
-      }
-      if (_lastReportedVoiceError == null) _reportVoiceFailure(error);
-    } finally {
-      if (!superseded()) {
-        _finishingVoice = false;
-        setState(() {});
-      }
-    }
-  }
-
-  /// Ends the recording as a WAV attachment instead of text, restoring any
-  /// live transcript the recognizer already wrote into the draft.
-  Future<void> _finishVoiceAsAudio({required bool sendAfter}) async {
-    final asr = widget.asrProvider;
-    if (!_ownsVoiceSession || _finishingVoice || asr == null) return;
-    _stopVoiceLevelSampling();
-    final original = _voiceBaseValue;
-    final serial = _voiceSessionSerial;
-    bool superseded() => !mounted || serial != _voiceSessionSerial;
-    _finishingVoice = true;
-    _savingVoiceAudio = true;
-    setState(() {});
-
-    void endSession() {
-      _voiceBaseValue = null;
-      _ownsVoiceSession = false;
-      _finishingVoice = false;
-      _savingVoiceAudio = false;
-      _voiceLevels.clear();
-    }
-
-    try {
-      final wav = await asr.finishAudio();
-      if (superseded()) return;
-      // Under ~0.25 s of 16 kHz PCM16 holds no usable speech.
-      final hasAudio = wav.length > 44 + 8000;
-      final attachment = hasAudio ? await _saveVoiceRecording(wav) : null;
-      // Cancelled or abandoned while saving: the file has no owner.
-      if (superseded()) {
-        if (attachment != null) {
-          unawaited(_deleteUnclaimedVoiceRecording(attachment.path));
-        }
-        return;
-      }
-      if (original != null) _controller.value = original;
-      endSession();
-      if (attachment != null) _docs.add(attachment);
-      setState(() {});
-      if (attachment == null) {
-        _reportNoSpeech();
-      } else if (sendAfter) {
-        await _handleSend();
-      }
-    } catch (error) {
-      if (superseded()) return;
-      if (original != null) _controller.value = original;
-      endSession();
-      setState(() {});
-      if (_lastReportedVoiceError == null) _reportVoiceFailure(error);
-    }
-  }
-
-  Future<void> _deleteUnclaimedVoiceRecording(String path) async {
-    try {
-      await File(path).delete();
-    } catch (error) {
-      debugPrint(
-        '[ChatInputBar] Failed to delete unclaimed recording $path: $error',
-      );
-    }
-  }
-
-  Future<DocumentAttachment> _saveVoiceRecording(Uint8List wav) async {
-    final dir =
-        await (widget.mediaController?.capture().uploadDirectory() ??
-            AppDirectories.getUploadDirectory());
-    await dir.create(recursive: true);
-    final now = DateTime.now();
-    String two(int value) => value.toString().padLeft(2, '0');
-    final baseName =
-        'voice_${now.year}${two(now.month)}${two(now.day)}_'
-        '${two(now.hour)}${two(now.minute)}${two(now.second)}';
-    var counter = 0;
-    while (true) {
-      final suffix = counter == 0 ? '' : '($counter)';
-      final file = File(p.join(dir.path, '$baseName$suffix.wav'));
-      try {
-        await file.create(exclusive: true);
-      } on FileSystemException {
-        if (!await file.exists()) rethrow;
-        counter++;
-        continue;
-      }
-      await file.writeAsBytes(wav, flush: true);
-      return DocumentAttachment(
-        path: file.path,
-        fileName: p.basename(file.path),
-        mime: 'audio/wav',
-      );
-    }
-  }
-
-  void _reportNoSpeech() {
-    if (!mounted) return;
-    showAppSnackBar(
-      context,
-      message: AppLocalizations.of(context)!.asrServicesNoSpeechDetected,
-      type: NotificationType.warning,
-    );
-  }
-
-  void _reportVoiceFailure(Object error) {
-    if (!mounted) return;
-    final raw = error
-        .toString()
-        .replaceFirst(RegExp(r'^\w+(?:<[^>]+>)?:\s*'), '')
-        .trim();
-    if (_lastReportedVoiceError == raw) return;
-    _lastReportedVoiceError = raw;
-    final lower = raw.toLowerCase();
-    final l10n = AppLocalizations.of(context)!;
-    final message =
-        lower.contains('microphone') &&
-            (lower.contains('permission') ||
-                lower.contains('denied') ||
-                lower.contains('not granted'))
-        ? l10n.asrServicesMicrophonePermissionDenied
-        : lower.contains('no speech') || lower.contains('silence')
-        ? l10n.asrServicesNoSpeechDetected
-        : lower.contains('system') && lower.contains('unavailable')
-        ? l10n.asrServicesSystemCheckFailed
-        : l10n.asrServicesRecognitionFailed(raw);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      showAppSnackBar(context, message: message, type: NotificationType.error);
-    });
-  }
-
-  /// Bottom row shown while recording: cancel (X) — waveform — stop — send.
-  Widget _buildVoiceRecordingRow(BuildContext context, ThemeData theme) {
-    final l10n = AppLocalizations.of(context)!;
-    final canFinish =
-        widget.asrProvider?.isListening == true && !_finishingVoice;
-    return Row(
-      key: const ValueKey('voice'),
-      children: [
-        _CompactIconButton(
-          tooltip: l10n.chatInputBarVoiceCancelTooltip,
-          icon: Lucide.X,
-          onTap: _finishingVoice ? null : () => unawaited(_cancelVoiceInput()),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(left: 8, right: 2),
-            // Match the normal action row height (32) so the input bar
-            // doesn't jump when switching in/out of recording state
-            child: SizedBox(
-              height: 32,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                layoutBuilder: (currentChild, previousChildren) => Stack(
-                  fit: StackFit.expand,
-                  alignment: Alignment.center,
-                  children: <Widget>[
-                    ...previousChildren,
-                    if (currentChild != null) currentChild,
-                  ],
-                ),
-                child: _finishingVoice
-                    ? _VoiceTranscribingIndicator(
-                        key: const ValueKey('voice-transcribing-indicator'),
-                        label: _savingVoiceAudio
-                            ? l10n.chatInputBarVoiceSavingAudio
-                            : l10n.chatInputBarVoiceTranscribing,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.72,
-                        ),
-                      )
-                    : ValueListenableBuilder<int>(
-                        valueListenable: _voiceLevelsVersion,
-                        builder: (context, _, _) => _VoiceWaveform(
-                          key: const ValueKey('voice-waveform'),
-                          levels: _voiceLevels,
-                          color: theme.colorScheme.onSurface.withValues(
-                            alpha: 0.85,
-                          ),
-                        ),
-                      ),
-              ),
-            ),
-          ),
-        ),
-        // Stop: finish recording into the draft — transcribed text, or the
-        // audio itself when no recognizer runs
-        _CompactIconButton(
-          tooltip: _voiceTranscribes
-              ? l10n.chatInputBarVoiceStopTooltip
-              : l10n.chatInputBarVoiceAttachAudioTooltip,
-          icon: Lucide.Square,
-          onTap: canFinish
-              ? () => unawaited(
-                  _voiceTranscribes
-                      ? _finishVoiceInput(sendAfter: false)
-                      : _finishVoiceAsAudio(sendAfter: false),
-                )
-              : null,
-          childBuilder: (c) => Center(
-            child: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: c,
-                borderRadius: BorderRadius.circular(3.5),
-              ),
-            ),
-          ),
-        ),
-        // Save as audio: skip recognition and attach the recording itself
-        if (_voiceTranscribes && _voiceCanSaveAudio) ...[
-          const SizedBox(width: 8),
-          _CompactIconButton(
-            tooltip: l10n.chatInputBarVoiceAttachAudioTooltip,
-            icon: Lucide.AudioLines,
-            onTap: canFinish
-                ? () => unawaited(_finishVoiceAsAudio(sendAfter: false))
-                : null,
-          ),
-        ],
-        const SizedBox(width: 8),
-        // Send: transcribe (or attach the audio) and send right away
-        _CompactSendButton(
-          enabled: canFinish,
-          onSend: () => unawaited(
-            _voiceTranscribes
-                ? _finishVoiceInput(sendAfter: true)
-                : _finishVoiceAsAudio(sendAfter: true),
-          ),
-          color: theme.colorScheme.primary,
-          icon: Lucide.Check,
-          tooltip: _voiceTranscribes
-              ? l10n.chatInputBarVoiceSendTooltip
-              : l10n.chatInputBarVoiceSendAudioTooltip,
-        ),
-      ],
-    );
-  }
 
   Future<void> _handleSend() async {
     if (_composerLocked ||
@@ -2606,509 +2099,6 @@ class _ChatInputBarState extends State<ChatInputBar>
     return (images: images, docs: docs);
   }
 
-  // Build a responsive left action bar that hides overflowing actions
-  // into an anchored "+" menu using DesktopContextMenu style.
-  Widget _buildResponsiveLeftActions(BuildContext context) {
-    const double spacing = 8;
-    const double normalButtonW = 32; // 20 + padding(6*2)
-    const double modelButtonW = 30; // 28 + padding(1*2)
-    const double plusButtonW = 32;
-
-    final l10n = AppLocalizations.of(context)!;
-    VoidCallback? lockTap(VoidCallback? callback) {
-      if (_composerLocked) return null;
-      return callback;
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final List<_OverflowAction> actions = [];
-
-        // Model select (always present; can be hidden if overflow)
-        actions.add(
-          _OverflowAction(
-            width: (widget.modelIcon != null) ? modelButtonW : normalButtonW,
-            builder: () => _CompactIconButton(
-              tooltip: l10n.chatInputBarSelectModelTooltip,
-              icon: Lucide.Boxes,
-              modelIcon: true,
-              onTap: lockTap(widget.onSelectModel),
-              onLongPress: lockTap(widget.onLongPressSelectModel),
-              child: widget.modelIcon,
-            ),
-            menu: DesktopContextMenuItem(
-              icon: Lucide.Boxes,
-              label: l10n.chatInputBarSelectModelTooltip,
-              onTap: lockTap(widget.onSelectModel),
-            ),
-          ),
-        );
-
-        // Search button (stateful icon depending on provider config)
-        final settings = context.watch<SettingsProvider>();
-        final ap = context.watch<AssistantProvider>();
-        final currentProviderKey = widget.chatModelProviderKey;
-        final currentModelId = widget.chatModelId;
-        final cfg = (currentProviderKey != null)
-            ? settings.getProviderConfig(currentProviderKey)
-            : null;
-        // Check built-in tools state using helper
-        final toolsState = BuiltInToolsHelper.getActiveTools(
-          cfg: cfg,
-          modelId: currentModelId,
-        );
-        final builtinSearchActive = toolsState.searchActive;
-        final appSearchEnabled = ap.currentSearchEnabled;
-        final brandAsset = (() {
-          if (!appSearchEnabled || builtinSearchActive) return null;
-          final services = settings.searchServices;
-          final sel = settings.searchServiceSelected.clamp(
-            0,
-            services.isNotEmpty ? services.length - 1 : 0,
-          );
-          final options = services.isNotEmpty
-              ? services[sel]
-              : SearchServiceOptions.defaultOption;
-          final svc = SearchService.getService(options);
-          return BrandAssets.assetForName(svc.name);
-        })();
-
-        // Search button
-        actions.add(
-          _OverflowAction(
-            width: normalButtonW,
-            builder: () {
-              // Not enabled at all -> default globe
-              if (!appSearchEnabled && !builtinSearchActive) {
-                return _CompactIconButton(
-                  tooltip: l10n.chatInputBarOnlineSearchTooltip,
-                  icon: Lucide.Globe,
-                  active: false,
-                  onTap: lockTap(widget.onOpenSearch),
-                );
-              }
-              // Built-in search -> magnifier icon in theme color
-              if (builtinSearchActive) {
-                return _CompactIconButton(
-                  tooltip: l10n.chatInputBarOnlineSearchTooltip,
-                  icon: Lucide.Search,
-                  active: true,
-                  onTap: lockTap(widget.onOpenSearch),
-                );
-              }
-              // External provider search -> brand icon
-              return _CompactIconButton(
-                tooltip: l10n.chatInputBarOnlineSearchTooltip,
-                icon: Lucide.Globe,
-                active: true,
-                onTap: lockTap(widget.onOpenSearch),
-                childBuilder: (c) {
-                  final asset = brandAsset;
-                  if (asset != null) {
-                    if (asset.endsWith('.svg')) {
-                      return SvgPicture.asset(
-                        asset,
-                        width: 20,
-                        height: 20,
-                        colorFilter: ColorFilter.mode(c, BlendMode.srcIn),
-                      );
-                    } else {
-                      return Image.asset(
-                        asset,
-                        width: 20,
-                        height: 20,
-                        color: c,
-                        colorBlendMode: BlendMode.srcIn,
-                      );
-                    }
-                  } else {
-                    return Icon(Lucide.Globe, size: 20, color: c);
-                  }
-                },
-              );
-            },
-            menu: () {
-              // Prefer vector icon if brandAsset is svg, otherwise pick reasonable default
-              if (!appSearchEnabled && !builtinSearchActive) {
-                return DesktopContextMenuItem(
-                  icon: Lucide.Globe,
-                  label: l10n.chatInputBarOnlineSearchTooltip,
-                  onTap: lockTap(widget.onOpenSearch),
-                );
-              }
-              if (builtinSearchActive) {
-                return DesktopContextMenuItem(
-                  icon: Lucide.Search,
-                  label: l10n.chatInputBarOnlineSearchTooltip,
-                  onTap: lockTap(widget.onOpenSearch),
-                );
-              }
-              if (brandAsset != null && brandAsset.endsWith('.svg')) {
-                return DesktopContextMenuItem(
-                  svgAsset: brandAsset,
-                  label: l10n.chatInputBarOnlineSearchTooltip,
-                  onTap: lockTap(widget.onOpenSearch),
-                );
-              }
-              return DesktopContextMenuItem(
-                icon: Lucide.Globe,
-                label: l10n.chatInputBarOnlineSearchTooltip,
-                onTap: lockTap(widget.onOpenSearch),
-              );
-            }(),
-          ),
-        );
-
-        if (widget.supportsReasoning) {
-          final request = widget.reasoning ?? ReasoningRequest.auto;
-          final compactLabel = settings.showReasoningLevelBadge
-              ? _reasoningCompactLabel(
-                  l10n,
-                  request,
-                  customBudget: widget.reasoningCustomBudget,
-                )
-              : null;
-          actions.add(
-            _OverflowAction(
-              width: compactLabel == null
-                  ? normalButtonW
-                  : _reasoningButtonWidth(compactLabel),
-              builder: () => _CompactIconButton(
-                tooltip: l10n.chatInputBarReasoningStrengthTooltip,
-                icon: Lucide.Brain,
-                active: widget.reasoningActive,
-                badge: compactLabel,
-                onTap: lockTap(widget.onConfigureReasoning),
-                childBuilder: (c) =>
-                    ReasoningIcons.levelIcon(request.level, size: 20, color: c),
-              ),
-              menu: DesktopContextMenuItem(
-                svgAsset: ReasoningIcons.assetForLevel(request.level),
-                label: compactLabel == null
-                    ? l10n.chatInputBarReasoningStrengthTooltip
-                    : '${l10n.chatInputBarReasoningStrengthTooltip} · $compactLabel',
-                onTap: lockTap(widget.onConfigureReasoning),
-              ),
-            ),
-          );
-        }
-
-        if (widget.showWorkspaceButton) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.workspaceEntryTooltip,
-                icon: Lucide.FolderCode,
-                active: widget.workspaceActive,
-                onTap: lockTap(widget.onOpenWorkspace),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.FolderCode,
-                label: l10n.workspaceEntryTooltip,
-                onTap: lockTap(widget.onOpenWorkspace),
-              ),
-            ),
-          );
-        }
-
-        if (widget.onOpenSkills != null) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.workspaceEntrySessionSkills,
-                icon: Lucide.WandSparkles,
-                active: widget.skillsActive,
-                onTap: lockTap(widget.onOpenSkills),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.WandSparkles,
-                label: l10n.workspaceEntrySessionSkills,
-                onTap: lockTap(widget.onOpenSkills),
-              ),
-            ),
-          );
-        }
-
-        // Tools button (local tools and MCP servers)
-        if (widget.showToolsButton) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.chatInputBarToolsTooltip,
-                icon: Lucide.ToolCase,
-                active: widget.toolsActive,
-                onTap: lockTap(widget.onOpenTools),
-                onLongPress: lockTap(widget.onLongPressTools),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.ToolCase,
-                label: l10n.chatInputBarToolsTooltip,
-                onTap: lockTap(widget.onOpenTools),
-              ),
-            ),
-          );
-        }
-
-        if (widget.showQuickPhraseButton && widget.onQuickPhrase != null) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.chatInputBarQuickPhraseTooltip,
-                icon: Lucide.Zap,
-                onTap: lockTap(widget.onQuickPhrase),
-                onLongPress: lockTap(widget.onLongPressQuickPhrase),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.Zap,
-                label: l10n.chatInputBarQuickPhraseTooltip,
-                onTap: lockTap(widget.onQuickPhrase),
-              ),
-            ),
-          );
-        }
-
-        if (widget.onPickCamera != null) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.bottomToolsSheetCamera,
-                icon: Lucide.Camera,
-                onTap: lockTap(widget.onPickCamera),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.Camera,
-                label: l10n.bottomToolsSheetCamera,
-                onTap: lockTap(widget.onPickCamera),
-              ),
-            ),
-          );
-        }
-
-        if (widget.onPickPhotos != null) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.bottomToolsSheetPhotos,
-                icon: Lucide.Image,
-                onTap: lockTap(widget.onPickPhotos),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.Image,
-                label: l10n.bottomToolsSheetPhotos,
-                onTap: lockTap(widget.onPickPhotos),
-              ),
-            ),
-          );
-        }
-
-        if (widget.onUploadFiles != null) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.bottomToolsSheetUpload,
-                icon: Lucide.Paperclip,
-                onTap: lockTap(widget.onUploadFiles),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.Paperclip,
-                label: l10n.bottomToolsSheetUpload,
-                onTap: lockTap(widget.onUploadFiles),
-              ),
-            ),
-          );
-        }
-
-        if (widget.onToggleLearningMode != null) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.instructionInjectionTitle,
-                icon: Lucide.Layers,
-                active: widget.learningModeActive,
-                onTap: lockTap(widget.onToggleLearningMode),
-                onLongPress: lockTap(widget.onLongPressLearning),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.Layers,
-                label: l10n.instructionInjectionTitle,
-                onTap: lockTap(widget.onToggleLearningMode),
-              ),
-            ),
-          );
-        }
-
-        if (widget.onOpenWorldBook != null) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.worldBookTitle,
-                icon: Lucide.BookOpen,
-                active: widget.worldBookActive,
-                onTap: lockTap(widget.onOpenWorldBook),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.BookOpen,
-                label: l10n.worldBookTitle,
-                onTap: lockTap(widget.onOpenWorldBook),
-              ),
-            ),
-          );
-        }
-
-        if (widget.onClearContext != null) {
-          void showContextMenu() {
-            showDesktopAnchoredMenu(
-              context,
-              anchorKey: _contextMgmtAnchorKey,
-              items: [
-                if (widget.onCompressContext != null)
-                  DesktopContextMenuItem(
-                    icon: Lucide.package2,
-                    label: l10n.compressContext,
-                    onTap: lockTap(widget.onCompressContext),
-                  ),
-                DesktopContextMenuItem(
-                  icon: Lucide.Eraser,
-                  label: l10n.bottomToolsSheetClearContext,
-                  onTap: lockTap(widget.onClearContext),
-                ),
-              ],
-            );
-          }
-
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => Container(
-                key: _contextMgmtAnchorKey,
-                child: _CompactIconButton(
-                  tooltip: l10n.contextManagement,
-                  icon: Lucide.Eraser,
-                  onTap: _composerLocked ? null : showContextMenu,
-                ),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.Eraser,
-                label: l10n.contextManagement,
-                onTap: _composerLocked ? null : showContextMenu,
-              ),
-            ),
-          );
-        }
-
-        if (widget.showMiniMapButton) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.miniMapTooltip,
-                icon: Lucide.Map,
-                onTap: lockTap(widget.onOpenMiniMap),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.Map,
-                label: l10n.miniMapTooltip,
-                onTap: lockTap(widget.onOpenMiniMap),
-              ),
-            ),
-          );
-        }
-
-        if (widget.showOcrButton && widget.onToggleOcr != null) {
-          actions.add(
-            _OverflowAction(
-              width: normalButtonW,
-              builder: () => _CompactIconButton(
-                tooltip: l10n.chatInputBarOcrTooltip,
-                icon: Lucide.Eye,
-                active: widget.ocrActive,
-                onTap: lockTap(widget.onToggleOcr),
-              ),
-              menu: DesktopContextMenuItem(
-                icon: Lucide.Eye,
-                label: l10n.chatInputBarOcrTooltip,
-                onTap: lockTap(widget.onToggleOcr),
-              ),
-            ),
-          );
-        }
-
-        // Compute total width with spacing to see if overflow is needed
-        double full = 0;
-        for (var i = 0; i < actions.length; i++) {
-          if (i > 0) full += spacing;
-          full += actions[i].width;
-        }
-
-        final maxW = constraints.maxWidth;
-        int visibleCount = actions.length;
-        if (full > maxW) {
-          // First pass: include as many as possible ignoring the +
-          double used = 0;
-          visibleCount = 0;
-          for (var i = 0; i < actions.length; i++) {
-            final add = (visibleCount > 0 ? spacing : 0) + actions[i].width;
-            if (used + add <= maxW) {
-              used += add;
-              visibleCount++;
-            } else {
-              break;
-            }
-          }
-          // Ensure + button fits; remove items until it does
-          while (visibleCount > 0 && used + spacing + plusButtonW > maxW) {
-            // remove last
-            used -= actions[visibleCount - 1].width;
-            if (visibleCount - 1 > 0) used -= spacing;
-            visibleCount--;
-          }
-        }
-
-        final overflowItems = actions.sublist(visibleCount);
-
-        final children = <Widget>[];
-        for (var i = 0; i < visibleCount; i++) {
-          if (i > 0) children.add(const SizedBox(width: spacing));
-          children.add(actions[i].builder());
-        }
-
-        if (overflowItems.isNotEmpty) {
-          if (children.isNotEmpty) children.add(const SizedBox(width: spacing));
-          final menuItems = overflowItems
-              .map((e) => e.menu)
-              .toList(growable: false);
-          children.add(
-            Container(
-              key: _leftOverflowAnchorKey,
-              child: _CompactIconButton(
-                tooltip: l10n.chatInputBarMoreTooltip,
-                icon: Lucide.Plus,
-                onTap: () {
-                  showDesktopAnchoredMenu(
-                    context,
-                    anchorKey: _leftOverflowAnchorKey,
-                    items: menuItems,
-                  );
-                },
-              ),
-            ),
-          );
-        }
-
-        return Row(children: children);
-      },
-    );
-  }
-
   String _inferMimeByExtension(String name) {
     final mediaMime = inferMediaMimeFromSource(name);
     if (mediaMime.isNotEmpty) return mediaMime;
@@ -3405,21 +2395,7 @@ class _ChatInputBarState extends State<ChatInputBar>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final settings = context.watch<SettingsProvider>();
-    final selectedAsrService = settings.selectedAsrService;
-    final asr = widget.asrProvider;
-    final showVoiceInput =
-        asr != null &&
-        !asr.isActive &&
-        ((selectedAsrService != null && asr.canUse(selectedAsrService)) ||
-            _modelAcceptsAudio(settings));
     final isDark = theme.brightness == Brightness.dark;
-    final inputFillColor = _inputFillColor(
-      theme: theme,
-      backgroundImageActive: widget.backgroundImageActive,
-      lightOpacity: widget.inputBackgroundOpacityLight,
-      darkOpacity: widget.inputBackgroundOpacityDark,
-    );
     final hasText = _controller.text.trim().isNotEmpty;
     final hasImages = _images.isNotEmpty;
     final hasDocs = _docs.isNotEmpty;
@@ -3440,12 +2416,7 @@ class _ChatInputBarState extends State<ChatInputBar>
         right: false,
         bottom: true,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.xxs,
-            AppSpacing.sm,
-            AppSpacing.xs,
-          ),
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -3520,28 +2491,46 @@ class _ChatInputBarState extends State<ChatInputBar>
                     // Main input container with iOS-like frosted glass effect
                     _buildExpandingComposer(
                       expandedLayout,
-                      ClipRRect(
+                      Container(
                         key: _composerKey,
-                        borderRadius: BorderRadius.circular(20),
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              // Translucent background over blurred content
-                              color: inputFillColor,
-                              borderRadius: BorderRadius.circular(20),
-                              // Use previous gray border for better contrast on white
-                              border: Border.all(
-                                color: isDark
-                                    ? theme.colorScheme.onSurface.withValues(
-                                        alpha: 0.10,
-                                      )
-                                    : theme.colorScheme.outline.withValues(
-                                        alpha: 0.20,
-                                      ),
-                                width: 1,
-                              ),
-                            ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF1E1E1D)
+                              : const Color(0xFFFFFFFF),
+                          borderRadius: BorderRadius.circular(28),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF333330)
+                                : const Color(0xFFE6E4DD),
+                            width: 1.0,
+                          ),
+                          boxShadow: isDark
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.50),
+                                    blurRadius: 28,
+                                    spreadRadius: 0,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.07),
+                                    blurRadius: 24,
+                                    spreadRadius: 0,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.03),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(28),
+                          child: BackdropFilter(
+                            filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -3660,14 +2649,11 @@ class _ChatInputBarState extends State<ChatInputBar>
                                         : StackFit.loose,
                                     children: [
                                       Padding(
-                                        padding: EdgeInsetsDirectional.fromSTEB(
-                                          AppSpacing.md,
-                                          AppSpacing.xxs,
-                                          expandedLayout || _canExpand
-                                              ? _expandButtonExtent +
-                                                    AppSpacing.xs
-                                              : AppSpacing.md,
-                                          AppSpacing.xs,
+                                        padding: const EdgeInsets.fromLTRB(
+                                          20,
+                                          16,
+                                          20,
+                                          8,
                                         ),
                                         child: Focus(
                                           onKeyEvent: _handleKeyEvent,
@@ -3798,12 +2784,16 @@ class _ChatInputBarState extends State<ChatInputBar>
                                                     hintFadeDuration:
                                                         Duration.zero,
                                                     hintStyle: TextStyle(
-                                                      color: theme
-                                                          .colorScheme
-                                                          .onSurface
-                                                          .withValues(
-                                                            alpha: 0.45,
-                                                          ),
+                                                      color: isDark
+                                                          ? const Color(
+                                                              0xFF888884,
+                                                            )
+                                                          : const Color(
+                                                              0xFF9E9D98,
+                                                            ),
+                                                      fontSize: 16.5,
+                                                      fontWeight:
+                                                          FontWeight.w400,
                                                     ),
                                                     border: InputBorder.none,
                                                     contentPadding:
@@ -3812,18 +2802,19 @@ class _ChatInputBarState extends State<ChatInputBar>
                                                         ),
                                                   ),
                                                   style: TextStyle(
-                                                    color: theme
-                                                        .colorScheme
-                                                        .onSurface,
-                                                    fontSize:
-                                                        (Platform.isWindows ||
-                                                            Platform.isLinux ||
-                                                            Platform.isMacOS)
-                                                        ? 14
-                                                        : 15,
+                                                    color: isDark
+                                                        ? const Color(
+                                                            0xFFEDEDEC,
+                                                          )
+                                                        : const Color(
+                                                            0xFF141413,
+                                                          ),
+                                                    fontSize: 16.5,
+                                                    fontWeight: FontWeight.w400,
                                                   ),
-                                                  cursorColor:
-                                                      theme.colorScheme.primary,
+                                                  cursorColor: isDark
+                                                      ? Colors.white
+                                                      : Colors.black,
                                                 ),
                                               );
                                             },
@@ -3867,151 +2858,177 @@ class _ChatInputBarState extends State<ChatInputBar>
                                     ],
                                   ),
                                 ),
-                                // Bottom buttons row (no divider)
+                                // Bottom buttons row: only left circular '+' and right circular Send/Stop
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(
-                                    AppSpacing.xs,
-                                    0,
-                                    AppSpacing.xs,
-                                    AppSpacing.xs,
+                                    12,
+                                    4,
+                                    12,
+                                    12,
                                   ),
-                                  child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 260),
-                                    switchInCurve: Curves.easeOutCubic,
-                                    switchOutCurve: Curves.easeInCubic,
-                                    transitionBuilder: (child, anim) =>
-                                        FadeTransition(
-                                          opacity: anim,
-                                          child: SlideTransition(
-                                            position: Tween<Offset>(
-                                              begin: const Offset(0, 0.35),
-                                              end: Offset.zero,
-                                            ).animate(anim),
-                                            child: child,
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      // Left button: 38x38 circular '+' button
+                                      Semantics(
+                                        button: true,
+                                        label: 'Add attachment or options',
+                                        child: InkWell(
+                                          onTap: _composerLocked
+                                              ? null
+                                              : () {
+                                                  if (widget.onMore != null) {
+                                                    widget.onMore!();
+                                                  } else if (widget
+                                                              .onUploadFiles !=
+                                                          null ||
+                                                      widget.onPickPhotos !=
+                                                          null) {
+                                                    (widget.onUploadFiles ??
+                                                        widget.onPickPhotos)!();
+                                                  }
+                                                },
+                                          borderRadius: BorderRadius.circular(
+                                            19,
+                                          ),
+                                          child: Container(
+                                            width: 38,
+                                            height: 38,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: isDark
+                                                  ? const Color(0xFF2C2C2A)
+                                                  : const Color(0xFFF0EFEA),
+                                            ),
+                                            alignment: Alignment.center,
+                                            child: Icon(
+                                              Lucide.Plus,
+                                              size: 20,
+                                              color: isDark
+                                                  ? const Color(0xFFEDEDEC)
+                                                  : const Color(0xFF141413),
+                                            ),
                                           ),
                                         ),
-                                    child: _ownsVoiceSession
-                                        ? _buildVoiceRecordingRow(
-                                            context,
-                                            theme,
-                                          )
-                                        : Row(
-                                            key: const ValueKey('actions'),
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              // Responsive left action bar that overflows into a + menu on desktop
-                                              Expanded(
-                                                child:
-                                                    _buildResponsiveLeftActions(
-                                                      context,
-                                                    ),
-                                              ),
-                                              Row(
-                                                children: [
-                                                  if (widget
-                                                      .showMoreButton) ...[
-                                                    _CompactIconButton(
-                                                      tooltip: AppLocalizations.of(
-                                                        context,
-                                                      )!.chatInputBarMoreTooltip,
-                                                      icon: Lucide.Plus,
-                                                      active: widget.moreOpen,
-                                                      onTap: _composerLocked
-                                                          ? null
-                                                          : widget.onMore,
-                                                      childBuilder: (c) => AnimatedSwitcher(
-                                                        duration:
-                                                            const Duration(
-                                                              milliseconds: 200,
-                                                            ),
-                                                        transitionBuilder:
-                                                            (
-                                                              child,
-                                                              anim,
-                                                            ) => RotationTransition(
-                                                              turns:
-                                                                  Tween<double>(
-                                                                    begin: 0.85,
-                                                                    end: 1,
-                                                                  ).animate(
-                                                                    anim,
-                                                                  ),
-                                                              child:
-                                                                  FadeTransition(
-                                                                    opacity:
-                                                                        anim,
-                                                                    child:
-                                                                        child,
-                                                                  ),
-                                                            ),
-                                                        child: Icon(
-                                                          widget.moreOpen
-                                                              ? Lucide.X
-                                                              : Lucide.Plus,
-                                                          key: ValueKey(
-                                                            widget.moreOpen
-                                                                ? 'close'
-                                                                : 'add',
+                                      ),
+                                      // Right button: 38x38 circular Send / Stop button
+                                      Builder(
+                                        builder: (context) {
+                                          final bool isLoading = widget.loading;
+                                          final bool canSend =
+                                              hasInput &&
+                                              !_composerLocked &&
+                                              !_hasUnreadyImages;
+
+                                          if (isLoading) {
+                                            return Semantics(
+                                              button: true,
+                                              label: 'Stop generation',
+                                              child: InkWell(
+                                                onTap: widget.onStop,
+                                                borderRadius:
+                                                    BorderRadius.circular(19),
+                                                child: Container(
+                                                  width: 38,
+                                                  height: 38,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: isDark
+                                                        ? const Color(
+                                                            0xFFFFFFFF,
+                                                          )
+                                                        : const Color(
+                                                            0xFF0D0D0D,
                                                           ),
-                                                          size: 20,
-                                                          color: c,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                  ],
-                                                  if (!isMobileLayout &&
-                                                      (widget
-                                                              .conversationId
-                                                              ?.isNotEmpty ??
-                                                          false))
-                                                    _ContextUsageInputControl(
-                                                      onTap: _composerLocked
-                                                          ? null
-                                                          : widget
-                                                                .onOpenContextUsage,
-                                                    ),
-                                                  if (showVoiceInput) ...[
-                                                    _CompactIconButton(
-                                                      tooltip: AppLocalizations.of(
-                                                        context,
-                                                      )!.chatInputBarVoiceInputTooltip,
-                                                      icon: Lucide.Mic,
-                                                      onTap:
-                                                          _composerLocked ||
-                                                              widget.loading
-                                                          ? null
-                                                          : () => unawaited(
-                                                              _startVoiceInput(),
-                                                            ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                  ],
-                                                  _CompactSendButton(
-                                                    enabled:
-                                                        hasInput &&
-                                                        !_composerLocked &&
-                                                        !_hasUnreadyImages,
-                                                    loading:
-                                                        widget.loading &&
-                                                        (!hasInput ||
-                                                            _composerLocked),
-                                                    onSend: _handleSend,
-                                                    onStop: widget.loading
-                                                        ? widget.onStop
-                                                        : null,
-                                                    color: theme
-                                                        .colorScheme
-                                                        .primary,
-                                                    icon: Lucide.ArrowUp,
-                                                    tooltip: widget
-                                                        .sendButtonTooltip,
                                                   ),
-                                                ],
+                                                  alignment: Alignment.center,
+                                                  child: Container(
+                                                    width: 14,
+                                                    height: 14,
+                                                    decoration: BoxDecoration(
+                                                      color: isDark
+                                                          ? const Color(
+                                                              0xFF0A0A0A,
+                                                            )
+                                                          : const Color(
+                                                              0xFFFFFFFF,
+                                                            ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            2.5,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                ),
                                               ),
-                                            ],
-                                          ),
+                                            );
+                                          } else if (canSend) {
+                                            return Semantics(
+                                              button: true,
+                                              label:
+                                                  widget.sendButtonTooltip ??
+                                                  'Send message',
+                                              child: InkWell(
+                                                onTap: () =>
+                                                    unawaited(_handleSend()),
+                                                borderRadius:
+                                                    BorderRadius.circular(19),
+                                                child: Container(
+                                                  width: 38,
+                                                  height: 38,
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: isDark
+                                                        ? const Color(
+                                                            0xFFFFFFFF,
+                                                          )
+                                                        : const Color(
+                                                            0xFF0D0D0D,
+                                                          ),
+                                                  ),
+                                                  alignment: Alignment.center,
+                                                  child: Icon(
+                                                    Lucide.ArrowUp,
+                                                    size: 20,
+                                                    color: isDark
+                                                        ? const Color(
+                                                            0xFF0A0A0A,
+                                                          )
+                                                        : const Color(
+                                                            0xFFFFFFFF,
+                                                          ),
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          } else {
+                                            return Semantics(
+                                              button: false,
+                                              label: 'Send message (disabled)',
+                                              child: Container(
+                                                width: 38,
+                                                height: 38,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: isDark
+                                                      ? const Color(0xFF2C2C2E)
+                                                      : const Color(0xFFE5E5E5),
+                                                ),
+                                                alignment: Alignment.center,
+                                                child: Icon(
+                                                  Lucide.ArrowUp,
+                                                  size: 20,
+                                                  color: isDark
+                                                      ? const Color(0xFF6E6E73)
+                                                      : const Color(0xFF8E8E8E),
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -4267,351 +3284,4 @@ class _ImageModePill extends StatelessWidget {
       ),
     );
   }
-}
-
-// Internal data model for responsive overflow actions on desktop
-class _OverflowAction {
-  final double width;
-  final Widget Function() builder;
-  final DesktopContextMenuItem menu;
-  const _OverflowAction({
-    required this.width,
-    required this.builder,
-    required this.menu,
-  });
-}
-
-// New compact button for the integrated input bar
-String? _reasoningCompactLabel(
-  AppLocalizations l10n,
-  ReasoningRequest request, {
-  required bool customBudget,
-}) {
-  if (customBudget && request.budgetTokens != null) {
-    return formatReasoningBudgetK(request.budgetTokens!);
-  }
-  if (request.level == ReasoningLevel.off ||
-      request.level == ReasoningLevel.auto) {
-    return null;
-  }
-  return reasoningLevelCompactLabel(l10n, request.level);
-}
-
-double _reasoningButtonWidth(String label) {
-  return (32.0 + label.length * 7.0).clamp(48.0, 76.0);
-}
-
-class _CompactIconButton extends StatelessWidget {
-  const _CompactIconButton({
-    required this.icon,
-    this.onTap,
-    this.onLongPress,
-    this.tooltip,
-    this.active = false,
-    this.child,
-    this.childBuilder,
-    this.badge,
-    this.modelIcon = false,
-  });
-
-  final IconData icon;
-  final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
-  final String? tooltip;
-  final bool active;
-  final Widget? child;
-  final Widget Function(Color color)? childBuilder;
-  final String? badge;
-  final bool modelIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final fgColor = active
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurface.withValues(alpha: isDark ? 0.70 : 0.54);
-    final bool isDesktop =
-        Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-
-    // Keep overall button size constant. For model icon with child, enlarge child slightly
-    // and reduce padding so (2*padding + childSize) stays unchanged.
-    final bool isModelChild = modelIcon && child != null;
-    final double iconSize = 20.0; // default glyph size
-    final double childSize = isModelChild
-        ? 28.0
-        : iconSize; // enlarge circle a bit more
-    final double padding = isModelChild
-        ? 1.0
-        : 6.0; // keep total ~30px (2*1 + 28)
-
-    final button = IosIconButton(
-      size: isModelChild ? childSize : 20,
-      padding: EdgeInsets.all(padding),
-      onTap: onTap,
-      // Disable long press on desktop platforms
-      onLongPress: isDesktop ? null : onLongPress,
-      color: fgColor,
-      builder: childBuilder != null || child != null || badge != null
-          ? (c) {
-              final glyph = childBuilder != null
-                  ? childBuilder!(c)
-                  : child ?? Icon(icon, size: 20, color: c);
-              final iconBox = SizedBox(
-                width: childSize,
-                height: childSize,
-                child: glyph,
-              );
-              if (badge == null) return iconBox;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  iconBox,
-                  const SizedBox(width: 3),
-                  Text(
-                    badge!,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: AppFontWeights.semibold,
-                      height: 1,
-                      color: c,
-                    ),
-                  ),
-                ],
-              );
-            }
-          : null,
-      icon: child == null && childBuilder == null && badge == null
-          ? icon
-          : null,
-    );
-
-    if (tooltip == null) {
-      return button;
-    }
-
-    return Tooltip(
-      message: tooltip!,
-      waitDuration: const Duration(milliseconds: 350),
-      child: Semantics(tooltip: tooltip!, child: button),
-    );
-  }
-}
-
-class _ContextUsageInputControl extends StatelessWidget {
-  const _ContextUsageInputControl({this.onTap});
-
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final usage = context.watch<ContextUsageService?>();
-    if (usage == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ContextUsageRing(
-        snapshot: usage.current,
-        onTap: () => onTap?.call(),
-      ),
-    );
-  }
-}
-
-// New compact send button for the integrated input bar
-class _CompactSendButton extends StatelessWidget {
-  const _CompactSendButton({
-    required this.enabled,
-    required this.onSend,
-    required this.color,
-    required this.icon,
-    this.loading = false,
-    this.onStop,
-    this.tooltip,
-  });
-
-  final bool enabled;
-  final bool loading;
-  final VoidCallback onSend;
-  final VoidCallback? onStop;
-  final Color color;
-  final IconData icon;
-  final String? tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final bg = (enabled || loading)
-        ? color
-        : cs.onSurface.withValues(alpha: 0.12);
-    final fg = (enabled || loading)
-        ? cs.onPrimary
-        : cs.onSurface.withValues(alpha: 0.38);
-
-    final button = Material(
-      color: bg,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: loading ? onStop : (enabled ? onSend : null),
-        child: Padding(
-          padding: const EdgeInsets.all(7),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            transitionBuilder: (child, anim) => ScaleTransition(
-              scale: anim,
-              child: FadeTransition(opacity: anim, child: child),
-            ),
-            child: loading
-                ? SvgPicture.asset(
-                    key: const ValueKey('stop'),
-                    'assets/icons/stop.svg',
-                    width: 18,
-                    height: 18,
-                    colorFilter: ColorFilter.mode(fg, BlendMode.srcIn),
-                  )
-                : Icon(icon, key: const ValueKey('send'), size: 18, color: fg),
-          ),
-        ),
-      ),
-    );
-    if (tooltip == null) return button;
-    return Tooltip(
-      message: tooltip!,
-      waitDuration: const Duration(milliseconds: 350),
-      child: Semantics(tooltip: tooltip!, child: button),
-    );
-  }
-}
-
-// Scrolling waveform driven by real mic amplitude samples (newest on the right).
-class _VoiceWaveform extends StatelessWidget {
-  const _VoiceWaveform({super.key, required this.levels, required this.color});
-
-  final List<double> levels;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _VoiceWaveformPainter(levels: levels, color: color),
-    );
-  }
-}
-
-class _VoiceTranscribingIndicator extends StatefulWidget {
-  const _VoiceTranscribingIndicator({
-    super.key,
-    required this.label,
-    required this.color,
-  });
-
-  final String label;
-  final Color color;
-
-  @override
-  State<_VoiceTranscribingIndicator> createState() =>
-      _VoiceTranscribingIndicatorState();
-}
-
-class _VoiceTranscribingIndicatorState
-    extends State<_VoiceTranscribingIndicator>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          RotationTransition(
-            turns: _controller,
-            child: Icon(Lucide.Loader, size: 15, color: widget.color),
-          ),
-          const SizedBox(width: 7),
-          Text(
-            widget.label,
-            style: TextStyle(fontSize: 12, color: widget.color),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VoiceWaveformPainter extends CustomPainter {
-  _VoiceWaveformPainter({required this.levels, required this.color});
-
-  /// Normalized mic levels in [0, 1]; the last entry is the newest sample.
-  final List<double> levels;
-  final Color color;
-
-  static const double _barWidth = 3;
-  static const double _barGap = 3.5;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    const step = _barWidth + _barGap;
-    final count = ((size.width + _barGap) / step).floor();
-    if (count <= 0) return;
-    final centerY = size.height / 2;
-    final maxH = size.height * 0.92;
-    // Center the bar row so both ends get the same inset — the capsule
-    // caps are then symmetric regardless of the exact width.
-    final leftInset = (size.width - (count * step - _barGap)) / 2;
-    // Samples are right-aligned onto the bar slots: the newest sample sits
-    // at the right edge and older samples scroll left, like a real recorder.
-    final visible = math.min(count, levels.length);
-    final first = levels.length - visible;
-    for (var i = 0; i < visible; i++) {
-      final level = levels[first + i].clamp(0.0, 1.0);
-      final slot = count - visible + i;
-      final x = leftInset + slot * step;
-      // True capsule silhouette: a rectangle with fully-rounded ends, i.e.
-      // the corner radius equals half the max bar height. Bars inside the
-      // cap are shortened along the semicircle but still follow the volume.
-      final radius = maxH / 2;
-      final dCenter =
-          math.min(x, size.width - (x + _barWidth)) +
-          _barWidth / 2; // bar center distance to the nearest edge
-      double envelope = 1.0;
-      if (dCenter < radius) {
-        envelope =
-            math.sqrt(
-              math.max(
-                0.0,
-                radius * radius - (radius - dCenter) * (radius - dCenter),
-              ),
-            ) /
-            radius;
-      }
-      final h = math.max(2.0, maxH * level * envelope);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, centerY - h / 2, _barWidth, h),
-          const Radius.circular(_barWidth / 2),
-        ),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_VoiceWaveformPainter oldDelegate) => true;
 }

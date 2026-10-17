@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/models/tool_schema_override.dart';
-import '../../../core/services/memory/memory_tools.dart';
-import '../../../core/services/search/search_tool_service.dart';
-import '../../../core/services/search/web_fetch_tool_service.dart';
 import '../../../core/services/tools/built_in_tool_catalog.dart';
-import '../../../features/home/services/local_tool_labels.dart';
 import '../../chat/widgets/workspace_tool_ui.dart';
 import '../../../core/services/workspace/workspace_tools_service.dart';
 import '../../../icons/lucide_adapter.dart';
@@ -19,27 +15,7 @@ IconData toolSchemaIconFor(String name) {
   if (WorkspaceToolsService.toolNames.contains(name)) {
     return workspaceToolIcon(name);
   }
-  switch (name) {
-    case SearchToolService.toolName:
-      return Lucide.Earth;
-    case WebFetchToolService.toolName:
-      return Lucide.Link;
-    case MemoryTools.memoryRead:
-    case MemoryTools.memoryUpdate:
-    case MemoryTools.memorySearchProfile:
-    case MemoryTools.memoryEdit:
-    case MemoryTools.updateUserProfile:
-    case 'create_memory':
-    case 'edit_memory':
-      return Lucide.bookHeart;
-    case MemoryTools.memoryDelete:
-    case 'delete_memory':
-      return Lucide.bookDashed;
-    case MemoryTools.chatSearch:
-      return Lucide.Search;
-    default:
-      return localToolIcon(name);
-  }
+  return Lucide.Wrench;
 }
 
 String toolSchemaFirstLine(String text) {

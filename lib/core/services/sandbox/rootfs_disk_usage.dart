@@ -10,11 +10,7 @@ import 'package:Kelivo/utils/app_directories.dart';
 /// Bytes and file count from a recursive directory walk.
 typedef DirectoryUsage = ({int bytes, int fileCount});
 
-/// Recursively sums file sizes under [dir], including `meta.db`.
-///
-/// Runs on a background isolate with synchronous listing so a full Ubuntu
-/// rootfs (~100k entries) does not stall the UI isolate. Symlinks are not
-/// followed. Unreadable entries are skipped. Missing directories are 0.
+/// Recursively sums file sizes under [dir].
 Future<int> measureDirectorySize(Directory dir) async {
   return (await measureDirectoryUsage(dir)).bytes;
 }
@@ -26,12 +22,12 @@ Future<DirectoryUsage> measureDirectoryUsage(Directory dir) async {
   return Isolate.run(() => measureDirectoryUsageSync(path));
 }
 
-/// Synchronous walk used by [measureDirectorySize] (and tests).
+/// Synchronous walk used by [measureDirectorySize].
 int measureDirectorySizeSync(String path) {
   return measureDirectoryUsageSync(path).bytes;
 }
 
-/// Synchronous walk used by [measureDirectoryUsage] (and tests).
+/// Synchronous walk used by [measureDirectoryUsage].
 DirectoryUsage measureDirectoryUsageSync(String path) {
   final root = Directory(path);
   if (!root.existsSync()) return (bytes: 0, fileCount: 0);
@@ -60,20 +56,13 @@ DirectoryUsage measureDirectoryUsageSync(String path) {
   return (bytes: total, fileCount: fileCount);
 }
 
-/// iOS fakefs install root: Application Support/environment/alpine-rootfs
-/// (`RootfsInstaller.rootfsDir`).
+/// iOS fakefs install root: Application Support/environment/alpine-rootfs.
 Future<Directory> iosAlpineRootfsDir() async {
   final support = await getApplicationSupportDirectory();
   return Directory(p.join(support.path, 'environment', 'alpine-rootfs'));
 }
 
-/// Directory that actually holds the extracted / fakefs rootfs.
-///
-/// iOS always measures Application Support `environment/alpine-rootfs`
-/// (`RootfsInstaller.rootfsDir` / [iosAlpineRootfsDir]). [rootfsDir] from
-/// [EnvironmentState] is often a Documents-style or guest path that is empty
-/// to a host walk. Android uses [rootfsDir] when set, otherwise
-/// Documents/environment/rootfs.
+/// Directory that actually holds the extracted rootfs.
 Future<Directory> resolveRootfsUsageDir({
   String? rootfsDir,
   TargetPlatform? platform,

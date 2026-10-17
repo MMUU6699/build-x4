@@ -4,18 +4,15 @@ import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/models/workspace.dart';
 import 'package:Kelivo/core/models/workspace_binding.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
-import 'package:Kelivo/core/providers/environment_provider.dart';
 import 'package:Kelivo/core/providers/workspace_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
 import 'package:Kelivo/core/services/haptics.dart';
-import 'package:Kelivo/core/services/sandbox/environment_manager.dart';
 import 'package:Kelivo/core/services/workspace/workspace_binding_actions.dart';
 import 'package:Kelivo/core/services/workspace/workspace_runtime.dart';
 import 'package:Kelivo/features/chat/utils/ensure_conversation.dart';
 import 'package:Kelivo/features/chat/utils/sheet_navigation.dart';
 import 'package:Kelivo/features/chat/widgets/tools_sheet_row.dart';
 import 'package:Kelivo/features/workspace/terminal/open_terminal.dart';
-import 'package:Kelivo/features/workspace/widgets/environment/environment_labels.dart';
 import 'package:Kelivo/features/workspace/pages/workspace_files_page.dart';
 import 'package:Kelivo/features/workspace/pages/workspace_settings_page.dart';
 import 'package:Kelivo/features/workspace/widgets/files/conversation_files_panel.dart';
@@ -23,7 +20,6 @@ import 'package:Kelivo/features/workspace/widgets/files/file_browser_ops.dart';
 import 'package:Kelivo/features/workspace/widgets/files/workspace_prompts.dart';
 import 'package:Kelivo/features/workspace/widgets/workspace_picker.dart';
 import 'package:Kelivo/features/workspace/workspace_layout.dart';
-import 'package:Kelivo/features/workspace/workspace_navigation.dart';
 import 'package:Kelivo/icons/lucide_adapter.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:Kelivo/shared/widgets/action_sheet.dart';
@@ -48,7 +44,7 @@ class WorkspaceSection extends StatefulWidget {
   final String? conversationId;
   final String? assistantId;
   final VoidCallback? onClose;
-  final EnvironmentManager? environmentManager;
+  final Object? environmentManager;
 
   static const Key bindKey = ValueKey<String>('workspace-section-bind');
   static const Key changeKey = ValueKey<String>('workspace-section-change');
@@ -237,15 +233,6 @@ class _WorkspaceSectionState extends State<WorkspaceSection> {
     );
   }
 
-  EnvironmentManager? _resolvedEnvManager() {
-    if (widget.environmentManager != null) return widget.environmentManager;
-    try {
-      return context.watch<EnvironmentManager?>();
-    } catch (_) {
-      return null;
-    }
-  }
-
   void _openBoundMenu(
     BuildContext buttonContext,
     Workspace workspace,
@@ -343,11 +330,7 @@ class _WorkspaceSectionState extends State<WorkspaceSection> {
         ? workspaces.byId(binding.workspaceId!)
         : null;
     final runtime = context.watch<WorkspaceRuntimeProvider>().runtime;
-    final env = context.watch<EnvironmentProvider>();
-    final envManager = _resolvedEnvManager();
     final desktop = useDesktopWorkspaceLayout(context);
-    final showEnvironment = envManager != null && !desktop;
-    final envStatus = workspaceEnvPhaseLabel(l10n, env.state.phase);
     final chevron = ToolsSheetRow.chevron(context);
 
     if (desktop) {
@@ -377,21 +360,6 @@ class _WorkspaceSectionState extends State<WorkspaceSection> {
           trailing: chevron,
         ),
       );
-      if (showEnvironment) {
-        rows.add(
-          ToolsSheetRow(
-            key: WorkspaceSection.environmentKey,
-            icon: Lucide.HardDrive,
-            label: l10n.workspaceEntryEnvironment,
-            detail: envStatus,
-            onTap: () {
-              Haptics.light();
-              _afterClose(WorkspaceNavigation.openEnvironmentPage);
-            },
-            trailing: chevron,
-          ),
-        );
-      }
       rows.add(_allowAllRow(l10n, binding));
     }
 

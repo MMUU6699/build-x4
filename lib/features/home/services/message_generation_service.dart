@@ -11,12 +11,9 @@ import '../../../core/models/model_spec.dart';
 import '../../../core/models/reasoning_request.dart';
 import '../../../core/models/skills_binding.dart';
 import '../../../core/providers/assistant_provider.dart';
-import '../../../core/providers/instruction_injection_provider.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/providers/world_book_provider.dart';
 import '../../../core/services/api/builtin_tools.dart';
 import '../../../core/services/api/chat_api_service.dart';
-import '../../../core/services/api/providers/openai/responses_history.dart';
 import '../../../core/services/api/reasoning/reasoning_dialects.dart';
 import '../../../core/services/model_spec/model_spec_resolver.dart';
 import '../../../core/providers/workspace_provider.dart';
@@ -36,7 +33,6 @@ import '../controllers/stream_controller.dart' as stream_ctrl;
 import '../controllers/generation_controller.dart';
 import 'ask_user_interaction_service.dart';
 import 'context_assembly.dart';
-import 'context_usage_service.dart';
 import 'message_builder_service.dart';
 import 'tool_approval_service.dart';
 import '../utils/model_display_helper.dart';
@@ -197,9 +193,7 @@ class MessageGenerationService {
       claudeSource: kind == ProviderKind.claude
           ? (providerId: providerKey, modelId: modelId)
           : null,
-      responsesScope: kind == ProviderKind.openai && cfg.useResponseApi == true
-          ? responsesReplayScope(cfg, modelId)
-          : null,
+      responsesScope: null,
     );
 
     if (assistant != null && assistant.regexRules.isNotEmpty) {
@@ -413,32 +407,7 @@ class MessageGenerationService {
     var requestRevision = currentConversation == null
         ? null
         : chatService.contextRevision(currentConversation.id);
-    final instructions = contextProvider.read<InstructionInjectionProvider?>();
-    final worldBooks = contextProvider.read<WorldBookProvider?>();
-    await instructions?.initialize();
-    await worldBooks?.initialize();
-    final configuration = contextUsageConfiguration(
-      settings: settings,
-      config: settings.getProviderConfig(providerKey),
-      providerKey: providerKey,
-      modelId: modelId,
-      assistant: assistant,
-      assistantId: assistantId,
-      instructions: instructions,
-      worldBooks: worldBooks,
-      conversation: currentConversation == null
-          ? null
-          : chatService.getConversation(currentConversation.id) ??
-                currentConversation,
-    );
-    final requestConfiguration = (
-      settings: configuration.settings,
-      memorySnapshotHash: await readContextMemorySnapshotHash(
-        repository: chatService.chatRepositoryOrNull,
-        settings: settings,
-        assistant: assistant,
-      ),
-    );
+    final requestConfiguration = (settings: settings, memorySnapshotHash: null);
     final packed = await assembleUnprocessedRequestContext(
       messages: messages,
       versionSelections: versionSelections,

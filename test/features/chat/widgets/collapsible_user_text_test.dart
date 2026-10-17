@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/tts_provider.dart';
 import 'package:Kelivo/core/providers/user_provider.dart';
 import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/chat/widgets/collapsible_user_text.dart';
@@ -250,13 +249,7 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider<SettingsProvider>.value(value: settings),
-          ChangeNotifierProvider(
-            create: (_) => UserProvider(preferences: harness.preferences),
-          ),
-          ChangeNotifierProvider(
-            create: (_) =>
-                TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider(create: (_) => UserProvider()),
           ChangeNotifierProvider(create: (_) => ToolApprovalService()),
           ChangeNotifierProvider(create: (_) => AskUserInteractionService()),
         ],
@@ -322,13 +315,7 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider<SettingsProvider>.value(value: settings),
-          ChangeNotifierProvider(
-            create: (_) => UserProvider(preferences: harness.preferences),
-          ),
-          ChangeNotifierProvider(
-            create: (_) =>
-                TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider(create: (_) => UserProvider()),
           ChangeNotifierProvider(create: (_) => ToolApprovalService()),
           ChangeNotifierProvider(create: (_) => AskUserInteractionService()),
         ],
@@ -390,13 +377,7 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider<SettingsProvider>.value(value: settings),
-          ChangeNotifierProvider(
-            create: (_) => UserProvider(preferences: harness.preferences),
-          ),
-          ChangeNotifierProvider(
-            create: (_) =>
-                TtsProvider(preferences: createBusinessTestPreferences()),
-          ),
+          ChangeNotifierProvider(create: (_) => UserProvider()),
           ChangeNotifierProvider(create: (_) => ToolApprovalService()),
           ChangeNotifierProvider(create: (_) => AskUserInteractionService()),
         ],

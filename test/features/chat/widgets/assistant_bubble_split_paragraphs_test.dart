@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/tts_provider.dart';
 import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/home/services/ask_user_interaction_service.dart';
 import 'package:Kelivo/features/home/services/tool_approval_service.dart';
@@ -32,10 +31,6 @@ Future<int> _bubbleCount(WidgetTester tester, {required bool split}) async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider<SettingsProvider>.value(value: settings),
-        ChangeNotifierProvider(
-          create: (_) =>
-              TtsProvider(preferences: createBusinessTestPreferences()),
-        ),
         ChangeNotifierProvider<ToolApprovalService>.value(
           value: ToolApprovalService(),
         ),

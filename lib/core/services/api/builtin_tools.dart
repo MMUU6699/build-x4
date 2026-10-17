@@ -1,5 +1,4 @@
 import '../../models/model_spec.dart';
-import '../../models/provider_oauth.dart';
 import '../../providers/settings_provider.dart';
 import '../model_spec/model_spec_resolver.dart';
 

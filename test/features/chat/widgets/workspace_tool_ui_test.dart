@@ -10,7 +10,6 @@ import 'package:provider/provider.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/tts_provider.dart';
 import 'package:Kelivo/core/providers/user_provider.dart';
 import 'package:Kelivo/core/services/workspace/tool_run_registry.dart';
 import 'package:Kelivo/core/services/workspace/workspace_tool_metadata.dart';
@@ -57,18 +56,8 @@ Widget _harness({
       ChangeNotifierProvider(
         create: (_) => SettingsProvider(createBusinessTestPreferences()),
       ),
-      ChangeNotifierProvider(
-        create: (_) =>
-            AssistantProvider(preferences: createBusinessTestPreferences()),
-      ),
-      ChangeNotifierProvider(
-        create: (_) =>
-            TtsProvider(preferences: createBusinessTestPreferences()),
-      ),
-      ChangeNotifierProvider(
-        create: (_) =>
-            UserProvider(preferences: createBusinessTestPreferences()),
-      ),
+      ChangeNotifierProvider(create: (_) => AssistantProvider()),
+      ChangeNotifierProvider(create: (_) => UserProvider()),
       ChangeNotifierProvider(create: (_) => registry ?? ToolRunRegistry()),
       ChangeNotifierProvider(create: (_) => approval ?? ToolApprovalService()),
       ChangeNotifierProvider(create: (_) => AskUserInteractionService()),

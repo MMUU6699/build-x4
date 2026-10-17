@@ -15,20 +15,14 @@ class DesktopNavRail extends StatelessWidget {
   const DesktopNavRail({
     super.key,
     required this.activeIndex,
-    this.globalSearchActive = false,
     required this.onTapChat,
-    required this.onTapGlobalSearch,
-    required this.onTapTranslate,
-    required this.onTapStorage,
+    required this.onTapWorkspaces,
     required this.onTapSettings,
   });
 
-  final int activeIndex; // 0=Chat, 1=Translate, 2=Storage, 3=Settings
-  final bool globalSearchActive;
+  final int activeIndex; // 0=Chat, 1=Workspaces, 2=Settings
   final VoidCallback onTapChat;
-  final VoidCallback onTapGlobalSearch;
-  final VoidCallback onTapTranslate;
-  final VoidCallback onTapStorage;
+  final VoidCallback onTapWorkspaces;
   final VoidCallback onTapSettings;
 
   static const double width = 64.0;
@@ -39,11 +33,9 @@ class DesktopNavRail extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final isMac = Platform.isMacOS;
     final double topGap = isMac ? 36.0 : 8.0;
-    final isChatActive = activeIndex == 0 && !globalSearchActive;
-    final isGlobalSearchActive = globalSearchActive;
-    final isTranslateActive = activeIndex == 1;
-    final isStorageActive = activeIndex == 2;
-    final isSettingsActive = activeIndex == 3;
+    final isChatActive = activeIndex == 0;
+    final isWorkspacesActive = activeIndex == 1;
+    final isSettingsActive = activeIndex == 2;
 
     return Container(
       width: width,
@@ -52,7 +44,7 @@ class DesktopNavRail extends StatelessWidget {
         children: [
           SizedBox(height: topGap),
           _UserAvatarButton(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _CircleAction(
             tooltip: l10n.desktopNavChatTooltip,
             icon: lucide.Lucide.MessageCircle,
@@ -63,36 +55,18 @@ class DesktopNavRail extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _CircleAction(
-            tooltip: l10n.desktopNavGlobalSearchTooltip,
-            icon: lucide.Lucide.Search,
-            onTap: onTapGlobalSearch,
+            tooltip: l10n.workspaceDeskMenuWorkspace,
+            icon: lucide.Lucide.FolderCode,
+            onTap: onTapWorkspaces,
             size: 40,
             iconSize: 18,
-            iconColor: isGlobalSearchActive ? cs.primary : null,
-          ),
-          const SizedBox(height: 8),
-          _CircleAction(
-            tooltip: l10n.desktopNavTranslateTooltip,
-            icon: lucide.Lucide.Languages,
-            onTap: onTapTranslate,
-            size: 40,
-            iconSize: 18,
-            iconColor: isTranslateActive ? cs.primary : null,
-          ),
-          const SizedBox(height: 8),
-          _CircleAction(
-            tooltip: l10n.desktopNavStorageTooltip,
-            icon: lucide.Lucide.Folder,
-            onTap: onTapStorage,
-            size: 40,
-            iconSize: 18,
-            iconColor: isStorageActive ? cs.primary : null,
+            iconColor: isWorkspacesActive ? cs.primary : null,
           ),
           const Spacer(),
           _ThemeCycleButton(),
           const SizedBox(height: 8),
           _CircleAction(
-            tooltip: l10n.desktopNavSettingsTooltip,
+            tooltip: l10n.settingsPageTitle,
             icon: lucide.Lucide.Settings,
             onTap: onTapSettings,
             size: 40,
@@ -143,16 +117,18 @@ class _UserAvatarButtonState extends State<_UserAvatarButton> {
         ),
       );
     } else if (type == 'file' && value != null && value.isNotEmpty) {
-      // Local file path (gracefully handle missing files from imported backups)
       final fixed = SandboxPathResolver.fix(value);
       final f = File(fixed);
       if (f.existsSync()) {
         avatar = ClipOval(
-          child: Image(
-            image: FileImage(f),
+          child: Image.file(
+            f,
             width: 36,
             height: 36,
             fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) {
+              return _initialAvatar(up.name, cs);
+            },
           ),
         );
       } else {
@@ -162,24 +138,19 @@ class _UserAvatarButtonState extends State<_UserAvatarButton> {
       avatar = _initialAvatar(up.name, cs);
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: GestureDetector(
-        onTap: () {
-          // Open centered profile dialog
-          showUserProfileDialog(context);
-        },
-        onSecondaryTap: () {
-          // Also open dialog on right-click for consistency
-          showUserProfileDialog(context);
-        },
-        child: _HoverCircle(size: 42, child: avatar),
-      ),
+    return _CircleAction(
+      tooltip: up.name.isNotEmpty ? up.name : 'Profile',
+      onTap: () {
+        showUserProfileDialog(context);
+      },
+      size: 40,
+      customChild: avatar,
     );
   }
 
   Widget _initialAvatar(String name, ColorScheme cs) {
-    final letter = name.isNotEmpty ? name.characters.first : '?';
+    final trimmed = name.trim();
+    final letter = trimmed.isNotEmpty ? trimmed.characters.first : 'U';
     return Container(
       width: 36,
       height: 36,
@@ -192,47 +163,75 @@ class _UserAvatarButtonState extends State<_UserAvatarButton> {
         letter,
         style: TextStyle(
           color: cs.primary,
-          fontWeight: AppFontWeights.emphasis,
-          decoration: TextDecoration.none,
-          fontSize: 36 * 0.44, // keep initial scaled to avatar size
+          fontSize: 16,
+          fontWeight: AppFontWeights.semibold,
         ),
       ),
     );
   }
-
-  // Context menu moved into the centered dialog (avatar tap opens menu there).
 }
 
-class _CircleAction extends StatelessWidget {
+class _CircleAction extends StatefulWidget {
   const _CircleAction({
-    required this.icon,
-    required this.onTap,
     required this.tooltip,
-    this.size = 44,
-    this.iconSize = 20,
+    this.icon,
+    required this.onTap,
+    this.size = 36.0,
+    this.iconSize = 18.0,
     this.iconColor,
+    this.customChild,
   });
-  final IconData icon;
-  final VoidCallback onTap;
+
   final String tooltip;
+  final IconData? icon;
+  final VoidCallback onTap;
   final double size;
   final double iconSize;
   final Color? iconColor;
+  final Widget? customChild;
+
+  @override
+  State<_CircleAction> createState() => _CircleActionState();
+}
+
+class _CircleActionState extends State<_CircleAction> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hoverBg = cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.06);
+
+    Widget inner;
+    if (widget.customChild != null) {
+      inner = widget.customChild!;
+    } else {
+      final color =
+          widget.iconColor ??
+          cs.onSurface.withValues(alpha: isDark ? 0.8 : 0.7);
+      inner = Icon(widget.icon, size: widget.iconSize, color: color);
+    }
+
     return Tooltip(
-      message: tooltip,
-      waitDuration: const Duration(milliseconds: 300),
-      child: GestureDetector(
-        onTap: onTap,
-        child: _HoverCircle(
-          size: size,
-          child: Icon(
-            icon,
-            size: iconSize,
-            color: (iconColor ?? cs.onSurface.withValues(alpha: 0.8)),
+      message: widget.tooltip,
+      waitDuration: const Duration(milliseconds: 500),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              color: _hover ? hoverBg : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: inner,
           ),
         ),
       ),
@@ -240,94 +239,42 @@ class _CircleAction extends StatelessWidget {
   }
 }
 
-class _HoverCircle extends StatefulWidget {
-  const _HoverCircle({required this.child, this.size = 44});
-  final Widget child;
-  final double size;
-  @override
-  State<_HoverCircle> createState() => _HoverCircleState();
-}
-
-class _HoverCircleState extends State<_HoverCircle> {
-  bool _hovered = false;
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOutCubic,
-        width: widget.size,
-        height: widget.size,
-        decoration: BoxDecoration(
-          color: _hovered
-              ? cs.primary.withValues(alpha: 0.10)
-              : Colors.transparent,
-          shape: BoxShape.circle,
-        ),
-        alignment: Alignment.center,
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-class _ThemeCycleButton extends StatefulWidget {
-  @override
-  State<_ThemeCycleButton> createState() => _ThemeCycleButtonState();
-}
-
-class _ThemeCycleButtonState extends State<_ThemeCycleButton> {
+class _ThemeCycleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sp = context.watch<SettingsProvider>();
-    final cs = Theme.of(context).colorScheme;
-    final icon = _iconFor(sp.themeMode);
-    final l10n = AppLocalizations.of(context)!;
-    return Tooltip(
-      message: l10n.desktopNavThemeToggleTooltip,
-      waitDuration: const Duration(milliseconds: 300),
-      child: GestureDetector(
-        onTap: () => _cycleTheme(context),
-        child: _HoverCircle(
-          size: 40,
-          child: Icon(
-            icon,
-            size: 20,
-            color: cs.onSurface.withValues(alpha: 0.8),
-          ),
-        ),
-      ),
-    );
-  }
+    final mode = sp.themeMode;
 
-  IconData _iconFor(ThemeMode mode) {
+    IconData icon;
+    String tip;
     switch (mode) {
-      case ThemeMode.light:
-        return lucide.Lucide.Sun;
-      case ThemeMode.dark:
-        return lucide.Lucide.Moon;
       case ThemeMode.system:
-        return lucide.Lucide.Monitor;
+        icon = lucide.Lucide.SunMoon;
+        tip = 'System Theme';
+        break;
+      case ThemeMode.light:
+        icon = lucide.Lucide.Sun;
+        tip = 'Light Theme';
+        break;
+      case ThemeMode.dark:
+        icon = lucide.Lucide.Moon;
+        tip = 'Dark Theme';
+        break;
     }
-  }
 
-  void _cycleTheme(BuildContext context) {
-    final sp = context.read<SettingsProvider>();
-    final current = sp.themeMode;
-    final next = () {
-      switch (current) {
-        case ThemeMode.system:
-          return ThemeMode.light;
-        case ThemeMode.light:
-          return ThemeMode.dark;
-        case ThemeMode.dark:
-          return ThemeMode.system;
-      }
-    }();
-    sp.setThemeMode(next);
+    return _CircleAction(
+      tooltip: tip,
+      icon: icon,
+      onTap: () {
+        final next = switch (mode) {
+          ThemeMode.system => ThemeMode.light,
+          ThemeMode.light => ThemeMode.dark,
+          ThemeMode.dark => ThemeMode.system,
+        };
+        sp.setThemeMode(next);
+      },
+      size: 40,
+      iconSize: 18,
+    );
   }
 }

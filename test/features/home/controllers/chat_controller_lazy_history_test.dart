@@ -41,7 +41,13 @@ class _FakeLazyChatService extends ChatService {
   }
 
   @override
-  Future<List<ChatMessage>> loadMessages(String conversationId) async {
+  Future<List<ChatMessage>> loadMessages(
+    String conversationId, {
+    int? limit,
+    int? offset,
+    bool includeFollowingAssistant = false,
+    String? throughRevisionId,
+  }) async {
     fullLoadCalls++;
     return List.of(_messages);
   }
@@ -52,7 +58,6 @@ class _FakeLazyChatService extends ChatService {
       if (ids.contains(message.id)) message,
   ];
 
-  @override
   Future<List<ChatMessage>> loadActiveTimelineMessages(
     String conversationId,
   ) async {
@@ -77,7 +82,6 @@ class _FakeLazyChatService extends ChatService {
     return _messages.indexWhere((message) => message.id == messageId);
   }
 
-  @override
   List<ChatMessage> getRecentMessages(
     String conversationId, {
     int minMessages = 20,
@@ -92,7 +96,6 @@ class _FakeLazyChatService extends ChatService {
     return _messages.sublist(_messages.length - count);
   }
 
-  @override
   Future<List<ChatMessage>> loadRecentMessages(
     String conversationId, {
     int minMessages = 20,
@@ -105,7 +108,6 @@ class _FakeLazyChatService extends ChatService {
     maxMessages: maxMessages,
   );
 
-  @override
   List<ChatMessage> getMessagesRange(
     String conversationId, {
     required int start,
@@ -119,19 +121,22 @@ class _FakeLazyChatService extends ChatService {
   @override
   Future<List<ChatMessage>> loadMessagesRange(
     String conversationId, {
-    required int start,
-    required int limit,
-    bool cacheInTimeline = true,
+    int start = 0,
+    int limit = 100,
+    bool cacheInTimeline = false,
   }) async => getMessagesRange(conversationId, start: start, limit: limit);
 
   @override
-  Future<LoadedTimelinePage?> loadTimelinePage(
+  Future<LoadedTimelinePage> loadTimelinePage(
     String conversationId, {
+    int? limit,
     String? beforeRevisionId,
     String? afterRevisionId,
-    String? aroundRevisionId,
     bool fromStart = false,
-    int limit = 40,
+    String? aroundRevisionId,
+    int? initialTextBudget,
+    int? initialMessageMin,
+    int? initialMessageMax,
   }) async {
     timelinePageCalls++;
     rangeLoadCalls++;
@@ -152,7 +157,7 @@ class _FakeLazyChatService extends ChatService {
         ),
       );
     }
-    final effectiveLimit = limit;
+    final effectiveLimit = limit ?? 40;
     var start = 0;
     var end = activeMessages.length;
     if (fromStart) {
@@ -162,22 +167,52 @@ class _FakeLazyChatService extends ChatService {
       final target = activeMessages.indexWhere(
         (message) => message.id == aroundRevisionId,
       );
-      if (target < 0) return null;
-      final before = limit ~/ 2;
+      if (target < 0) {
+        return LoadedTimelinePage(
+          conversationId: conversationId,
+          stateRevision: 0,
+          contextStartRevisionId: null,
+          slots: const [],
+          hasMoreBefore: false,
+          hasMoreAfter: false,
+          totalSlotCount: activeMessages.length,
+        );
+      }
+      final before = effectiveLimit ~/ 2;
       start = (target - before).clamp(0, activeMessages.length - 1);
-      end = (start + limit).clamp(start, activeMessages.length);
-      start = (end - limit).clamp(0, end);
+      end = (start + effectiveLimit).clamp(start, activeMessages.length);
+      start = (end - effectiveLimit).clamp(0, end);
     } else if (beforeRevisionId != null) {
       end = activeMessages.indexWhere(
         (message) => message.id == beforeRevisionId,
       );
-      if (end < 0) return null;
+      if (end < 0) {
+        return LoadedTimelinePage(
+          conversationId: conversationId,
+          stateRevision: 0,
+          contextStartRevisionId: null,
+          slots: const [],
+          hasMoreBefore: false,
+          hasMoreAfter: false,
+          totalSlotCount: activeMessages.length,
+        );
+      }
       start = (end - effectiveLimit).clamp(0, end);
     } else if (afterRevisionId != null) {
       final cursor = activeMessages.indexWhere(
         (message) => message.id == afterRevisionId,
       );
-      if (cursor < 0) return null;
+      if (cursor < 0) {
+        return LoadedTimelinePage(
+          conversationId: conversationId,
+          stateRevision: 0,
+          contextStartRevisionId: null,
+          slots: const [],
+          hasMoreBefore: false,
+          hasMoreAfter: false,
+          totalSlotCount: activeMessages.length,
+        );
+      }
       start = cursor + 1;
       end = (start + effectiveLimit).clamp(start, activeMessages.length);
     } else {
@@ -195,7 +230,6 @@ class _FakeLazyChatService extends ChatService {
         ifAbsent: () => 1,
       );
     }
-    final timestamp = DateTime(2026, 7, 11);
     return LoadedTimelinePage(
       conversationId: conversationId,
       stateRevision: 0,
@@ -204,15 +238,9 @@ class _FakeLazyChatService extends ChatService {
         for (final (offset, message) in selected.indexed)
           LoadedTimelineSlot(
             identity: ActiveTimelineSlot(
-              slotId: message.groupId ?? message.id,
               revisionId: message.id,
-              parentRevisionId: start + offset == 0
-                  ? null
-                  : activeMessages[start + offset - 1].id,
-              role: message.role,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-              finalizedAt: timestamp,
+              groupId: message.groupId ?? message.id,
+              version: message.version,
               versionCount: counts[message.groupId ?? message.id] ?? 1,
               logicalIndex: start + offset,
             ),
@@ -229,7 +257,6 @@ class _FakeLazyChatService extends ChatService {
   Map<String, int> getVersionSelections(String conversationId) =>
       Map<String, int>.from(versionSelections);
 
-  @override
   Map<String, int> getFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -245,13 +272,11 @@ class _FakeLazyChatService extends ChatService {
     return result;
   }
 
-  @override
   Future<Map<String, int>> loadFirstMessageIndicesForGroups(
     String conversationId,
     Iterable<String> groupIds,
   ) async => getFirstMessageIndicesForGroups(conversationId, groupIds);
 
-  @override
   List<ChatMessage> getMessagesForGroups(
     String conversationId,
     Iterable<String> groupIds,
@@ -270,10 +295,13 @@ class _FakeLazyChatService extends ChatService {
 
   @override
   Future<List<ChatMessage>> loadMessageVersionHeaders(
-    String conversationId,
-    Iterable<String> groupIds,
-  ) async => [
-    for (final message in await loadMessagesForGroups(conversationId, groupIds))
+    String conversationId, [
+    Iterable<String>? groupIds,
+  ]) async => [
+    for (final message in await loadMessagesForGroups(
+      conversationId,
+      groupIds ?? const [],
+    ))
       message.copyWith(content: ''),
   ];
 
@@ -308,7 +336,7 @@ class _FakeLazyChatService extends ChatService {
   Future<Conversation> createDraftConversation({
     String? title,
     String? assistantId,
-    bool temporary = false,
+    bool? temporary,
     bool reuseNewEntry = false,
   }) async {
     return Conversation(title: title ?? 'Draft', assistantId: assistantId);

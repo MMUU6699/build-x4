@@ -1,40 +1,38 @@
-import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'package:Kelivo/core/database/app_database.dart';
-import 'package:Kelivo/core/database/business_preferences.dart';
-import 'package:Kelivo/core/database/business_repository.dart';
-import 'package:Kelivo/core/database/business_settings_router.dart';
+import 'package:Kelivo/core/services/preferences/app_preferences.dart';
 
 final class BusinessTestHarness {
-  BusinessTestHarness._(this.database, this.repository, this.preferences);
+  BusinessTestHarness._(this.preferences);
 
-  final AppDatabase database;
-  final BusinessRepository repository;
   final BusinessPreferences preferences;
 
   static Future<BusinessTestHarness> create({
     Map<String, Object?> initial = const <String, Object?>{},
     Map<String, Object> localInitial = const <String, Object>{},
   }) async {
-    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-    SharedPreferences.setMockInitialValues(localInitial);
-    final database = AppDatabase(NativeDatabase.memory());
-    final repository = BusinessRepository(database);
-    await database.customSelect('SELECT 1;').getSingle();
-    if (initial.isNotEmpty) {
-      await repository.replaceSnapshot(
-        BusinessSettingsRouter.normalizeAndRoute(initial),
-      );
-    }
-    final preferences = BusinessPreferences(repository);
+    final mockValues = <String, Object>{...localInitial};
+    initial.forEach((k, v) {
+      if (v != null) {
+        if (v is String ||
+            v is bool ||
+            v is int ||
+            v is double ||
+            v is List<String>) {
+          mockValues[k] = v;
+        }
+      }
+    });
+    AppPreferences.resetForTesting();
+    SharedPreferences.setMockInitialValues(mockValues);
+    final preferences = BusinessPreferences();
     await preferences.load();
-    return BusinessTestHarness._(database, repository, preferences);
+    return BusinessTestHarness._(preferences);
   }
 
-  Future<void> close() => database.close();
+  Future<void> close() async {
+    AppPreferences.resetForTesting();
+  }
 }
 
 Future<BusinessTestHarness> createBusinessTestHarness({
@@ -49,18 +47,11 @@ Future<BusinessTestHarness> createBusinessTestHarness({
   return harness;
 }
 
-/// Creates an isolated SQLite-backed preference facade for tests that only need
-/// to satisfy a provider dependency. The provider will await [load] itself.
-///
-/// Prefer [createBusinessTestHarness] when a test needs seeded business data or
-/// direct access to the repository. These dependency-only databases intentionally
-/// live for the test isolate: a provider can keep writing defaults after a widget
-/// test has completed, so closing them from `addTearDown` races that work.
 BusinessPreferences createBusinessTestPreferences({
   Map<String, Object> localInitial = const <String, Object>{},
 }) {
-  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  AppPreferences.resetForTesting();
   SharedPreferences.setMockInitialValues(localInitial);
-  final database = AppDatabase(NativeDatabase.memory());
-  return BusinessPreferences(BusinessRepository(database));
+  final preferences = BusinessPreferences();
+  return preferences;
 }

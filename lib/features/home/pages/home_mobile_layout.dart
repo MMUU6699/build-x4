@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
-import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:provider/provider.dart';
 import 'dart:ui' as ui;
 
 import '../../../l10n/app_localizations.dart';
@@ -11,16 +9,9 @@ import '../../../shared/widgets/interactive_drawer.dart';
 import '../widgets/side_drawer.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../../../core/providers/user_provider.dart';
-import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/assistant_provider.dart';
-import '../../../core/services/haptics.dart';
-import '../../../shared/animations/widgets.dart';
-import '../../../shared/widgets/ios_tactile.dart';
 import '../../chat/widgets/frosted/chat_frosted_backdrop.dart';
 import '../../chat/widgets/chat_assistant_background.dart';
-import '../widgets/assistant_avatar.dart';
-import '../widgets/assistant_entry_actions.dart';
-import 'package:Kelivo/theme/app_font_weights.dart';
 
 /// Mobile layout scaffold for the home page
 /// This widget handles only the structural layout - AppBar, drawer, body structure
@@ -33,8 +24,8 @@ class HomeMobileScaffold extends StatelessWidget {
     required this.assistantPickerCloseTick,
     required this.loadingConversationIds,
     required this.title,
-    required this.providerName,
-    required this.modelDisplay,
+    this.providerName,
+    this.modelDisplay,
     required this.onToggleDrawer,
     required this.onDismissKeyboard,
     required this.onSelectConversation,
@@ -42,7 +33,7 @@ class HomeMobileScaffold extends StatelessWidget {
     required this.onOpenMiniMap,
     required this.onCreateNewConversation,
     required this.onToggleTemporaryConversation,
-    required this.onSelectModel,
+    this.onSelectModel,
     required this.canToggleTemporaryConversation,
     required this.temporaryConversationEnabled,
     required this.globalSearchMode,
@@ -69,7 +60,7 @@ class HomeMobileScaffold extends StatelessWidget {
   final VoidCallback onOpenMiniMap;
   final Future<void> Function() onCreateNewConversation;
   final Future<void> Function() onToggleTemporaryConversation;
-  final VoidCallback onSelectModel;
+  final VoidCallback? onSelectModel;
   final bool canToggleTemporaryConversation;
   final bool temporaryConversationEnabled;
   final bool globalSearchMode;
@@ -138,16 +129,17 @@ class HomeMobileScaffold extends StatelessWidget {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context, ColorScheme cs) {
-    final isDesktopPlatform =
-        defaultTargetPlatform == TargetPlatform.macOS ||
-        defaultTargetPlatform == TargetPlatform.windows ||
-        defaultTargetPlatform == TargetPlatform.linux;
-    final useNewAssistantAvatarUx = context
-        .watch<SettingsProvider>()
-        .useNewAssistantAvatarUx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final btnBg = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF);
+    final btnBorder = isDark
+        ? const Color(0xFF2C2C2E)
+        : const Color(0xFFEAEAEA);
+    final iconColor = isDark
+        ? const Color(0xFFFFFFFF)
+        : const Color(0xFF0D0D0D);
 
     return AppBar(
-      systemOverlayStyle: (Theme.of(context).brightness == Brightness.dark)
+      systemOverlayStyle: isDark
           ? const SystemUiOverlayStyle(
               statusBarColor: Colors.transparent,
               statusBarIconBrightness: Brightness.light,
@@ -162,171 +154,136 @@ class HomeMobileScaffold extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
-      leading: Builder(
-        builder: (context) {
-          return IosIconButton(
-            size: 20,
-            padding: const EdgeInsets.all(8),
-            minSize: 40,
-            builder: (color) => SvgPicture.asset(
-              'assets/icons/list.svg',
-              width: 14,
-              height: 14,
-              colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+      centerTitle: false,
+      leadingWidth: 58,
+      leading: Padding(
+        padding: const EdgeInsetsDirectional.only(start: 14),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Semantics(
+            button: true,
+            label: 'Menu',
+            child: InkWell(
+              onTap: () {
+                onDismissKeyboard();
+                onToggleDrawer();
+              },
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: btnBg,
+                  border: Border.all(color: btnBorder, width: 1.0),
+                  boxShadow: isDark
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                ),
+                alignment: Alignment.center,
+                child: SvgPicture.asset(
+                  'assets/icons/list.svg',
+                  width: 18,
+                  height: 18,
+                  colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
+                ),
+              ),
             ),
-            onTap: () {
-              onDismissKeyboard();
-              onToggleDrawer();
-            },
-          );
-        },
+          ),
+        ),
       ),
-      titleSpacing: 2,
-      title: useNewAssistantAvatarUx
-          ? Row(
-              children: [
-                _buildAssistantTitleAvatar(context),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedTextSwap(
-                        text: title,
-                        style: TextStyle(
-                          fontSize: isDesktopPlatform ? 14 : 16,
-                          fontWeight: AppFontWeights.medium,
-                        ),
-                      ),
-                      if (providerName != null && modelDisplay != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(6),
-                            onTap: onSelectModel,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 0),
-                              child: AnimatedTextSwap(
-                                text: '$modelDisplay ($providerName)',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: cs.onSurface.withValues(alpha: 0.6),
-                                  fontWeight: AppFontWeights.medium,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedTextSwap(
-                  text: title,
-                  style: TextStyle(
-                    fontSize: isDesktopPlatform ? 14 : 16,
-                    fontWeight: AppFontWeights.medium,
-                  ),
-                ),
-                if (providerName != null && modelDisplay != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: onSelectModel,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 0),
-                        child: AnimatedTextSwap(
-                          text: '$modelDisplay ($providerName)',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: cs.onSurface.withValues(alpha: 0.6),
-                            fontWeight: AppFontWeights.medium,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+      title: const SizedBox.shrink(),
       actions: [
-        IosIconButton(
-          size: 20,
-          minSize: 44,
-          onTap: onOpenMiniMap,
-          semanticLabel: AppLocalizations.of(context)!.miniMapTooltip,
-          icon: Lucide.Map,
-        ),
-        IosIconButton(
-          size: 22,
-          minSize: 44,
-          onTap: () async {
-            if (canToggleTemporaryConversation) {
+        // Temporary chat circular button (40x40)
+        Semantics(
+          button: true,
+          label: 'Temporary chat',
+          child: InkWell(
+            onTap: () async {
               await onToggleTemporaryConversation();
-            } else {
-              await onCreateNewConversation();
-            }
-          },
-          semanticLabel: canToggleTemporaryConversation
-              ? AppLocalizations.of(context)!.temporaryChatToggleTooltip
-              : AppLocalizations.of(context)!.titleForLocale,
-          icon: canToggleTemporaryConversation && !temporaryConversationEnabled
-              ? Lucide.MessageCircleDashed
-              : Lucide.MessageCirclePlus,
-          builder:
-              canToggleTemporaryConversation && temporaryConversationEnabled
-              ? (color) => SvgPicture.asset(
-                  'assets/icons/temporary_chat_checked.svg',
-                  width: 22,
-                  height: 22,
-                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-                )
-              : null,
-        ),
-
-        const SizedBox(width: 4),
-      ],
-    );
-  }
-
-  Widget _buildAssistantTitleAvatar(BuildContext context) {
-    final assistantProvider = context.watch<AssistantProvider>();
-    final currentAssistant = assistantProvider.currentAssistant;
-    final currentAssistantId = assistantProvider.currentAssistantId;
-
-    return IosCardPress(
-      borderRadius: BorderRadius.circular(999),
-      baseColor: Colors.transparent,
-      padding: const EdgeInsets.all(2),
-      longPressTimeout: const Duration(milliseconds: 280),
-      onTap: () {
-        onDismissKeyboard();
-        onToggleDrawer();
-      },
-      onLongPress: currentAssistantId == null
-          ? null
-          : () {
-              Haptics.light();
-              AssistantEntryActions.openAssistantSettings(
-                context,
-                currentAssistantId,
-              );
             },
-      child: AssistantAvatar(
-        assistant: currentAssistant,
-        fallbackName: _getAssistantName(context),
-        size: 28,
-      ),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: temporaryConversationEnabled
+                    ? (isDark
+                          ? const Color(0xFFFFFFFF)
+                          : const Color(0xFF0D0D0D))
+                    : btnBg,
+                border: Border.all(
+                  color: temporaryConversationEnabled
+                      ? (isDark
+                            ? const Color(0xFFFFFFFF)
+                            : const Color(0xFF0D0D0D))
+                      : btnBorder,
+                  width: 1.0,
+                ),
+                boxShadow: isDark
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                Lucide.MessageCircleDashed,
+                size: 19,
+                color: temporaryConversationEnabled
+                    ? (isDark
+                          ? const Color(0xFF0A0A0A)
+                          : const Color(0xFFFFFFFF))
+                    : iconColor,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // New conversation circular button (40x40)
+        Semantics(
+          button: true,
+          label: 'New conversation',
+          child: InkWell(
+            onTap: () async {
+              await onCreateNewConversation();
+            },
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: btnBg,
+                border: Border.all(color: btnBorder, width: 1.0),
+                boxShadow: isDark
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+              ),
+              alignment: Alignment.center,
+              child: Icon(Lucide.SquarePen, size: 19, color: iconColor),
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+      ],
     );
   }
 }
@@ -360,129 +317,7 @@ class ScrollNavigationButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showSetting = context.watch<SettingsProvider>().showMessageNavButtons;
-    if (!showSetting || !hasMessages) return const SizedBox.shrink();
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bottomOffset = inputBarHeight + 12;
-
-    return Stack(
-      children: [
-        // Scroll to bottom button
-        Align(
-          alignment: Alignment.bottomRight,
-          child: SafeArea(
-            top: false,
-            bottom: false,
-            child: IgnorePointer(
-              ignoring: !showJumpToBottom,
-              child: AnimatedScale(
-                scale: showJumpToBottom ? 1.0 : 0.9,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  opacity: showJumpToBottom ? 1 : 0,
-                  child: Padding(
-                    padding: EdgeInsets.only(right: 16, bottom: bottomOffset),
-                    child: _ScrollButton(
-                      isDark: isDark,
-                      icon: Lucide.ChevronDown,
-                      onTap: onScrollToBottom,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        // Scroll to previous message button
-        Align(
-          alignment: Alignment.bottomRight,
-          child: SafeArea(
-            top: false,
-            bottom: false,
-            child: IgnorePointer(
-              ignoring: !showJumpToBottom,
-              child: AnimatedScale(
-                scale: showJumpToBottom ? 1.0 : 0.9,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  opacity: showJumpToBottom ? 1 : 0,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: 16,
-                      bottom: bottomOffset + 52,
-                    ),
-                    child: _ScrollButton(
-                      isDark: isDark,
-                      icon: Lucide.ChevronUp,
-                      onTap: onScrollToPreviousQuestion,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ScrollButton extends StatelessWidget {
-  const _ScrollButton({
-    required this.isDark,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final bool isDark;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ClipOval(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isDark
-                ? cs.onSurface.withValues(alpha: 0.06)
-                : cs.surface.withValues(alpha: 0.07),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isDark
-                  ? cs.onSurface.withValues(alpha: 0.10)
-                  : cs.outline.withValues(alpha: 0.20),
-              width: 1,
-            ),
-          ),
-          child: Material(
-            type: MaterialType.transparency,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Icon(
-                  icon,
-                  size: 16,
-                  color: cs.onSurface.withValues(alpha: isDark ? 1.0 : 0.87),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 

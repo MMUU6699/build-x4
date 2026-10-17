@@ -3,6 +3,7 @@ import '../../../support/windows_key_events.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 
 import 'package:Kelivo/core/models/chat_input_data.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
@@ -134,11 +135,7 @@ void main() {
         ChangeNotifierProvider.value(
           value: settings ?? SettingsProvider(createBusinessTestPreferences()),
         ),
-        ChangeNotifierProvider.value(
-          value: AssistantProvider(
-            preferences: createBusinessTestPreferences(),
-          ),
-        ),
+        ChangeNotifierProvider.value(value: AssistantProvider()),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -178,6 +175,7 @@ void main() {
     addTearDown(() {
       messenger.setMockMethodCallHandler(SystemChannels.platform, null);
       messenger.setMockMethodCallHandler(clipboardChannel, null);
+      WindowsPasteFix.instance.uninstall();
     });
 
     final settings = SettingsProvider(createBusinessTestPreferences());
@@ -830,7 +828,10 @@ void main() {
     await tester.tap(find.byIcon(Lucide.ArrowUp));
     await tester.pumpAndSettle();
 
-    expect(submitted?.imagePaths.single, product.path);
+    expect(
+      p.normalize(submitted?.imagePaths.single ?? ''),
+      p.normalize(product.path),
+    );
     expect(await fileExists(tester, source), isTrue);
 
     controller.dispose();
@@ -996,7 +997,7 @@ void main() {
       final subscription = uploadDir
           .watch(events: FileSystemEvent.create | FileSystemEvent.delete)
           .listen((event) {
-            if (event.path != product.path) return;
+            if (p.normalize(event.path) != p.normalize(product.path)) return;
             if (event.type == FileSystemEvent.create) {
               sawProductCreated = true;
             } else if (event.type == FileSystemEvent.delete &&

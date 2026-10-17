@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:Kelivo/core/database/business_settings_router.dart';
 import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/models/model_spec.dart';
 import 'package:Kelivo/core/models/reasoning_request.dart';
@@ -422,14 +421,6 @@ void main() {
       expect(jsonDecode(raw!), {
         'OpenAI::gpt-5.1': {'level': 'medium', 'budgetTokens': 16000},
       });
-      expect(
-        BusinessKeyRegistry.classify('reasoning_choice_by_model_v1'),
-        BusinessKeyDisposition.preference,
-      );
-      expect(
-        BusinessKeyRegistry.preferenceKeys,
-        contains('reasoning_choice_by_model_v1'),
-      );
 
       final reloaded = SettingsProvider(harness.preferences);
       await reloaded.loaded;

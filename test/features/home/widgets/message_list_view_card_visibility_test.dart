@@ -11,7 +11,6 @@ import 'package:Kelivo/features/chat/widgets/timeline_projection.dart';
 import 'package:Kelivo/features/chat/widgets/timeline_visibility.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
-import 'package:Kelivo/core/providers/tts_provider.dart';
 import 'package:Kelivo/core/providers/user_provider.dart';
 import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/home/controllers/stream_controller.dart'
@@ -1457,18 +1456,8 @@ class _CardVisibilityHarnessState extends State<_CardVisibilityHarness> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<SettingsProvider>.value(value: widget.settings),
-        ChangeNotifierProvider(
-          create: (_) =>
-              AssistantProvider(preferences: createBusinessTestPreferences()),
-        ),
-        ChangeNotifierProvider(
-          create: (_) =>
-              UserProvider(preferences: createBusinessTestPreferences()),
-        ),
-        ChangeNotifierProvider(
-          create: (_) =>
-              TtsProvider(preferences: createBusinessTestPreferences()),
-        ),
+        ChangeNotifierProvider(create: (_) => AssistantProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => AskUserInteractionService()),
         ChangeNotifierProvider<ToolApprovalService>.value(
           value: widget.approval ?? _ownedApproval,
