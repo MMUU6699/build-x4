@@ -249,4 +249,38 @@ class Lucide {
   static const IconData SlidersHorizontal =
       lucide.LucideIcons.slidersHorizontal;
   static const IconData AudioLines = lucide.LucideIcons.audioLines;
+
+  static const IconData plug = lucide.LucideIcons.plug;
+  static const IconData Plug = lucide.LucideIcons.plug;
+  static const IconData shieldCheck = lucide.LucideIcons.shieldCheck;
+  static const IconData ShieldCheck = lucide.LucideIcons.shieldCheck;
+  static const IconData mousePointer = lucide.LucideIcons.mousePointer;
+  static const IconData MousePointer = lucide.LucideIcons.mousePointer;
+  static const IconData skipBack = lucide.LucideIcons.skipBack;
+  static const IconData SkipBack = lucide.LucideIcons.skipBack;
+  static const IconData skipForward = lucide.LucideIcons.skipForward;
+  static const IconData SkipForward = lucide.LucideIcons.skipForward;
+  static const IconData CircleDot = lucide.LucideIcons.circleDot;
+  static const IconData circle = lucide.LucideIcons.circle;
+  static const IconData Circle = lucide.LucideIcons.circle;
+  static const IconData checkCircle2 = lucide.LucideIcons.circleCheck;
+  static const IconData CheckCircle2 = lucide.LucideIcons.circleCheck;
+  static const IconData monitor = lucide.LucideIcons.monitor;
+  static const IconData terminal = lucide.LucideIcons.terminal;
+  static const IconData globe = lucide.LucideIcons.earth;
+  static const IconData fileCode = lucide.LucideIcons.fileCode;
+  static const IconData fileText = lucide.LucideIcons.fileText;
+  static const IconData search = lucide.LucideIcons.search;
+  static const IconData chevronUp = lucide.LucideIcons.chevronUp;
+  static const IconData chevronRight = lucide.LucideIcons.chevronRight;
+  static const IconData rotateCw = lucide.LucideIcons.rotateCw;
+  static const IconData lock = lucide.LucideIcons.lock;
+  static const IconData listChecks = lucide.LucideIcons.listChecks;
+  static const IconData check = lucide.LucideIcons.check;
+  static const IconData play = lucide.LucideIcons.play;
+  static const IconData x = lucide.LucideIcons.x;
+  static const IconData plus = lucide.LucideIcons.plus;
+  static const IconData folderOpen = lucide.LucideIcons.folderOpen;
+  static const IconData Star = lucide.LucideIcons.star;
+  static const IconData AlertCircle = lucide.LucideIcons.circleAlert;
 }

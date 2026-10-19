@@ -64,11 +64,13 @@ class _DraftService extends ChatService {
     String? assistantId,
     bool? temporary,
     bool reuseNewEntry = false,
+    Map<String, dynamic>? extras,
   }) async {
     await createGate?.future;
     final draft = Conversation(
       title: title ?? 'Draft',
       assistantId: assistantId,
+      extras: extras,
     );
     drafts.add(draft);
     return draft;

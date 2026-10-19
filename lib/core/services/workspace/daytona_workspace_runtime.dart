@@ -70,6 +70,8 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
     Map<String, dynamic>? params,
   }) async {
     final client = SupabaseConfig.client;
+    await SupabaseConfig.ensureValidToken();
+    final token = client.auth.currentSession?.accessToken;
     final body = <String, dynamic>{
       'action': action,
       'sandboxId': sandboxId ?? defaultSandboxId,
@@ -79,10 +81,7 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
     final res = await client.functions.invoke(
       'daytona-workspace',
       body: body,
-      headers: {
-        if (client.auth.currentSession?.accessToken != null)
-          'Authorization': 'Bearer ${client.auth.currentSession!.accessToken}',
-      },
+      headers: {if (token != null) 'Authorization': 'Bearer $token'},
     );
 
     if (res.status >= 400) {
@@ -276,6 +275,131 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
     );
     final matches = res['matches'] as List<dynamic>?;
     return matches?.map((e) => e.toString()).toList() ?? <String>[];
+  }
+
+  Future<List<Map<String, dynamic>>> searchWeb(
+    String query, {
+    int limit = 5,
+    String? sandboxId,
+  }) async {
+    final res = await invokeDaytona(
+      action: 'search_web',
+      sandboxId: sandboxId,
+      params: {'query': query, 'limit': limit},
+    );
+    final list = res['results'] as List<dynamic>?;
+    if (list != null) {
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  Future<Map<String, dynamic>> navigateBrowser(
+    String url, {
+    String? sandboxId,
+  }) async {
+    final res = await invokeDaytona(
+      action: 'browser_navigate',
+      sandboxId: sandboxId,
+      params: {'url': url},
+    );
+    return res;
+  }
+
+  Future<Map<String, dynamic>> browserView({String? sandboxId}) async {
+    final res = await invokeDaytona(
+      action: 'browser_view',
+      sandboxId: sandboxId,
+    );
+    return res;
+  }
+
+  Future<Map<String, dynamic>> browserClick({
+    int? index,
+    int? x,
+    int? y,
+    String? sandboxId,
+  }) async {
+    final res = await invokeDaytona(
+      action: 'browser_click',
+      sandboxId: sandboxId,
+      params: {
+        if (index != null) 'index': index,
+        if (x != null) 'coordinate_x': x,
+        if (y != null) 'coordinate_y': y,
+      },
+    );
+    return res;
+  }
+
+  Future<Map<String, dynamic>> browserInput({
+    int? index,
+    required String text,
+    bool pressEnter = false,
+    String? sandboxId,
+  }) async {
+    final res = await invokeDaytona(
+      action: 'browser_input',
+      sandboxId: sandboxId,
+      params: {'index': index ?? 0, 'text': text, 'press_enter': pressEnter},
+    );
+    return res;
+  }
+
+  Future<Map<String, dynamic>> browserScroll({
+    String direction = 'down',
+    String? sandboxId,
+  }) async {
+    final res = await invokeDaytona(
+      action: 'browser_scroll',
+      sandboxId: sandboxId,
+      params: {'direction': direction},
+    );
+    return res;
+  }
+
+  Future<Map<String, dynamic>> browserPressKey({
+    String key = 'Enter',
+    String? sandboxId,
+  }) async {
+    final res = await invokeDaytona(
+      action: 'browser_press_key',
+      sandboxId: sandboxId,
+      params: {'key': key},
+    );
+    return res;
+  }
+
+  Future<Map<String, dynamic>> browserRestart({
+    String? url,
+    String? sandboxId,
+  }) async {
+    final res = await invokeDaytona(
+      action: 'browser_restart',
+      sandboxId: sandboxId,
+      params: {if (url != null) 'url': url},
+    );
+    return res;
+  }
+
+  Future<String?> captureScreenshot({String? url, String? sandboxId}) async {
+    final res = await invokeDaytona(
+      action: 'browser_screenshot',
+      sandboxId: sandboxId,
+      params: {if (url != null) 'url': url},
+    );
+    final s = res['screenshot_url'] as String?;
+    if (s != null && s.isNotEmpty) return s;
+    return null;
+  }
+
+  Future<Map<String, dynamic>> checkHealth() async {
+    try {
+      final res = await invokeDaytona(action: 'health');
+      return res;
+    } catch (e) {
+      return {'status': 'error', 'details': e.toString()};
+    }
   }
 
   Future<String> createSandbox({

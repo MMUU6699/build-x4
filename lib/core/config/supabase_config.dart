@@ -14,7 +14,8 @@ class SupabaseConfig {
   static bool get isGuestMode => _guestMode;
 
   static bool get isUnconfigured =>
-      supabaseUrl.contains('your-project.supabase.co');
+      supabaseUrl.contains('your-project.supabase.co') ||
+      supabaseAnonKey.contains('your-anon-key');
 
   static Future<void> enableGuestMode() async {
     _guestMode = true;
@@ -22,6 +23,13 @@ class SupabaseConfig {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_guestModeKey, true);
     } catch (_) {}
+    if (!isUnconfigured && client.auth.currentSession == null) {
+      try {
+        await client.auth.signInAnonymously();
+      } catch (e) {
+        debugPrint('[SupabaseConfig] Anonymous sign in error: $e');
+      }
+    }
     authStateNotifier.value = true;
   }
 
@@ -39,18 +47,38 @@ class SupabaseConfig {
       final prefs = await SharedPreferences.getInstance();
       _guestMode = prefs.getBool(_guestModeKey) ?? false;
     } catch (_) {}
+    if (_guestMode && !isUnconfigured && client.auth.currentSession == null) {
+      try {
+        await client.auth.signInAnonymously();
+      } catch (e) {
+        debugPrint('[SupabaseConfig] Anonymous sign in on load error: $e');
+      }
+    }
     authStateNotifier.value = isAuthenticated;
+  }
+
+  static Future<String?> ensureValidToken() async {
+    if (isUnconfigured) return null;
+    if (client.auth.currentSession == null) {
+      try {
+        await client.auth.signInAnonymously();
+      } catch (e) {
+        debugPrint('[SupabaseConfig] Anonymous sign in failed: $e');
+      }
+    }
+    return client.auth.currentSession?.accessToken;
   }
 
   // Supabase URL & Anon Key with fallback constants or environment overrides.
   static const String defaultUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://your-project.supabase.co',
+    defaultValue: 'https://owgpuolvfqfjhezuohyf.supabase.co',
   );
 
   static const String defaultAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: 'your-anon-key',
+    defaultValue:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93Z3B1b2x2ZnFmamhlenVvaHlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzMjAwMTMsImV4cCI6MjEwNzg5NjAxM30.99gurLpTbQOPOpEds6EUd0m4Vc0GuodloO-GVbIW0DM',
   );
 
   static String get supabaseUrl => defaultUrl;

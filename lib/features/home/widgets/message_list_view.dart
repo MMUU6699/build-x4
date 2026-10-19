@@ -1740,7 +1740,7 @@ class _MessageListViewState extends State<MessageListView> {
               keyboardDismissBehavior: _keyboardDismissBehavior,
               itemBuilder: (context, index) {
                 if (_effectiveRenderModels.isEmpty && _hasFooter) {
-                  return SizedBox(height: _footerExtent, child: widget.footer);
+                  return widget.footer!;
                 }
                 if (index < 0 || index >= _effectiveRenderModels.length) {
                   return const SizedBox.shrink();
@@ -2153,7 +2153,7 @@ class _MessageListViewState extends State<MessageListView> {
             child: _buildContextDivider(context),
           ),
         if (_hasFooter && index == _effectiveRenderModels.length - 1)
-          SizedBox(height: _footerExtent, child: widget.footer),
+          widget.footer!,
       ],
     );
     final isSpotlight =

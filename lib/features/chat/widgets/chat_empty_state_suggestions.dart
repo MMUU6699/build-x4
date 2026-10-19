@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../icons/lucide_adapter.dart';
+import '../../work/providers/work_session_provider.dart';
 
 class SuggestionItem {
   final IconData icon;
@@ -111,6 +113,83 @@ class ChatEmptyStateSuggestions extends StatelessWidget {
     final textColor = isDark
         ? const Color(0xFFE0E0E0)
         : const Color(0xFF333333);
+
+    final workSession = context.watch<WorkSessionProvider?>();
+    final isWorkMode = workSession?.isWorkMode ?? false;
+    final isDaytonaConnected = workSession?.isDaytonaConnected ?? true;
+
+    if (isWorkMode) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            bottom: bottomContentPadding,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'What can I do for you?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontFamily: 'serif',
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? const Color(0xFFDADADA)
+                      : const Color(0xFF34322D),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              if (!isDaytonaConnected) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF3A2B20)
+                        : const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF6B4520)
+                          : const Color(0xFFFFB74D),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Lucide.TriangleAlert,
+                        size: 16,
+                        color: isDark
+                            ? const Color(0xFFFFB74D)
+                            : const Color(0xFFE65100),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Daytona Cloud Sandbox is disconnected',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark
+                              ? const Color(0xFFFFCC80)
+                              : const Color(0xFFE65100),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (footer != null) ...[const SizedBox(height: 24), footer!],
+            ],
+          ),
+        ),
+      );
+    }
 
     // Display only 4 compact suggestions directly above the ChatBox
     final displayedSuggestions = _allSuggestions.take(4).toList();

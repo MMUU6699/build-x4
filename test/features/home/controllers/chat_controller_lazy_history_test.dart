@@ -338,8 +338,13 @@ class _FakeLazyChatService extends ChatService {
     String? assistantId,
     bool? temporary,
     bool reuseNewEntry = false,
+    Map<String, dynamic>? extras,
   }) async {
-    return Conversation(title: title ?? 'Draft', assistantId: assistantId);
+    return Conversation(
+      title: title ?? 'Draft',
+      assistantId: assistantId,
+      extras: extras,
+    );
   }
 }
 

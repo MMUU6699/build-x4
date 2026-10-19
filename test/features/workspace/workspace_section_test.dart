@@ -94,10 +94,12 @@ class _FakeChatService extends ChatService {
     String? assistantId,
     bool? temporary,
     bool reuseNewEntry = false,
+    Map<String, dynamic>? extras,
   }) async {
     final draft = Conversation(
       title: title ?? 'New Chat',
       assistantId: assistantId,
+      extras: extras,
     );
     setConversation(draft);
     notifyListeners();

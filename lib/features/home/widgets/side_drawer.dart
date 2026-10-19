@@ -38,6 +38,7 @@ import '../../../theme/app_font_weights.dart';
 import '../../../core/providers/tag_provider.dart';
 import '../../assistant/widgets/assistant_select_sheet.dart';
 import '../../../desktop/hotkeys/sidebar_tab_bus.dart';
+import '../../work/providers/work_session_provider.dart';
 import 'dart:async';
 import '../../../features/search/services/global_session_search_service.dart';
 import '../controllers/chat_actions.dart';
@@ -177,6 +178,7 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
   String? _cachedSidebarRowsQuery;
   String? _cachedSidebarRowsAssistantId;
   List<String>? _cachedSidebarRowsAssistantIds;
+  bool? _cachedSidebarRowsIsWork;
   List<_SidebarRow>? _cachedSidebarRows;
 
   bool _selectionMode = false;
@@ -1421,11 +1423,16 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
   }) {
     final assistants = context.read<AssistantProvider>();
     final assistantIds = assistants.assistants.map((a) => a.id).toList();
+    bool isWork = false;
+    try {
+      isWork = context.watch<WorkSessionProvider>().isWorkMode;
+    } catch (_) {}
     if (_cachedSidebarRows != null &&
         _cachedSidebarRowsRevision == revision &&
         _cachedSidebarRowsInitialized == initialized &&
         _cachedSidebarRowsQuery == query &&
         _cachedSidebarRowsAssistantId == assistantId &&
+        _cachedSidebarRowsIsWork == isWork &&
         listEquals(_cachedSidebarRowsAssistantIds, assistantIds)) {
       return _cachedSidebarRows!;
     }
@@ -1435,6 +1442,7 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
       assistantId: assistantId,
       assistants: assistants,
       query: query,
+      isWorkMode: isWork,
     );
     _cachedSidebarRows = rows;
     _cachedSidebarRowsRevision = revision;
@@ -1442,6 +1450,7 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
     _cachedSidebarRowsQuery = query;
     _cachedSidebarRowsAssistantId = assistantId;
     _cachedSidebarRowsAssistantIds = assistantIds;
+    _cachedSidebarRowsIsWork = isWork;
     return rows;
   }
 
@@ -1450,13 +1459,19 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
     required String? assistantId,
     required AssistantProvider assistants,
     required String query,
+    required bool isWorkMode,
   }) {
     final q = query.trim().toLowerCase();
     final pinned = <ChatItem>[];
     final rest = <ChatItem>[];
     final resolvedOwnerIds = <String, String?>{};
-    // Single pass: filter assistant + query, split pinned/rest via ChatItem.isPinned.
+    // Single pass: filter assistant + query + mode, split pinned/rest via ChatItem.isPinned.
     for (final c in chatService.getAllConversations()) {
+      if (isWorkMode) {
+        if (!c.isWork) continue;
+      } else {
+        if (c.isWork) continue;
+      }
       if (c.assistantId != null &&
           resolvedOwnerIds.putIfAbsent(
                 c.assistantId!,

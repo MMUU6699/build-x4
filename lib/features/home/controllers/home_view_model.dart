@@ -1044,7 +1044,10 @@ class HomeViewModel extends ChangeNotifier {
 
   /// Returns this request's new or reused entry even if navigation changes
   /// while its preset messages are being persisted.
-  Future<Conversation?> createNewConversation({String? assistantId}) async {
+  Future<Conversation?> createNewConversation({
+    String? assistantId,
+    String? mode,
+  }) async {
     // Flush current conversation progress before creating new
     await _chatActions.flushConversationProgress(currentConversation);
     if (!_contextProvider.mounted) return null;
@@ -1063,13 +1066,14 @@ class HomeViewModel extends ChangeNotifier {
     final targetAssistantId = assistantId ?? ap.currentAssistantId;
     final a = ap.getById(targetAssistantId ?? '');
 
-    final existingEntryId = _chatService.composerDrafts
-        .newEntry(targetAssistantId)
-        ?.id;
+    final existingEntryId = mode == null
+        ? _chatService.composerDrafts.newEntry(targetAssistantId)?.id
+        : null;
     final conversation = await _chatService.createDraftConversation(
       title: getTitleForLocale(_contextProvider),
       assistantId: targetAssistantId,
-      reuseNewEntry: true,
+      reuseNewEntry: mode == null,
+      extras: mode != null ? {'mode': mode} : null,
     );
 
     final restoringEntry = existingEntryId == conversation.id;

@@ -53,6 +53,10 @@ import '../controllers/home_page_controller.dart';
 import '../controllers/scroll_controller.dart' as scroll_ctrl;
 import 'home_mobile_layout.dart';
 import 'home_desktop_layout.dart';
+import '../../work/providers/work_session_provider.dart';
+import '../../work/widgets/work_step_group_widget.dart';
+import '../../work/widgets/work_computer_modal_sheet.dart';
+import '../../work/widgets/work_computer_tray.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
 
 class HomePage extends StatefulWidget {
@@ -631,6 +635,28 @@ class _HomePageState extends State<HomePage>
   late final Future<void> _chatReady;
   bool _readingIncomingShares = false;
   bool _incomingShareChanged = false;
+  bool _isComputerModalShowing = false;
+  AppMode? _lastObservedMode;
+
+  void _onWorkSessionChanged() {
+    if (!mounted) return;
+    final workSession = context.read<WorkSessionProvider>();
+    if (_lastObservedMode != null && _lastObservedMode != workSession.mode) {
+      _lastObservedMode = workSession.mode;
+      _controller.switchMode(workSession.mode);
+    } else {
+      _lastObservedMode = workSession.mode;
+    }
+    if (workSession.isComputerOpen && !_isComputerModalShowing) {
+      _isComputerModalShowing = true;
+      WorkComputerModalSheet.show(context).then((_) {
+        _isComputerModalShowing = false;
+        if (mounted) {
+          context.read<WorkSessionProvider>().closeComputer();
+        }
+      });
+    }
+  }
 
   // ============================================================================
   // Page Controller (manages all business logic and state)
@@ -671,6 +697,11 @@ class _HomePageState extends State<HomePage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _lastViewInsetBottom = View.of(context).viewInsets.bottom;
+        try {
+          context.read<WorkSessionProvider>().addListener(
+            _onWorkSessionChanged,
+          );
+        } catch (_) {}
       }
       _controller.measureInputBar();
     });
@@ -719,6 +750,9 @@ class _HomePageState extends State<HomePage>
     try {
       WidgetsBinding.instance.removeObserver(this);
     } catch (_) {}
+    try {
+      context.read<WorkSessionProvider>().removeListener(_onWorkSessionChanged);
+    } catch (_) {}
     _processTextSub?.cancel();
     _incomingShares?.dispose();
     _controller.removeListener(_onControllerChanged);
@@ -735,6 +769,11 @@ class _HomePageState extends State<HomePage>
     final conversationId = _controller.currentConversation?.id;
     if (conversationId != null && conversationId != _scrollConversationId) {
       _scrollConversationId = conversationId;
+      try {
+        context.read<WorkSessionProvider>().loadSessionForConversation(
+          conversationId,
+        );
+      } catch (_) {}
       final previous = _scrollController;
       final replacement = scroll_ctrl.ChatAutoFollowScrollController();
       _scrollController = replacement;
@@ -1006,7 +1045,12 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildMobileBody(BuildContext context, ColorScheme cs) {
-    final bottomContentPadding = _controller.inputBarHeight + 16;
+    final workSession = context.watch<WorkSessionProvider>();
+    final double computerTrayHeight =
+        (workSession.isWorkMode && workSession.isAgentRunning) ? 52.0 : 0.0;
+    final double keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomContentPadding =
+        _controller.inputBarHeight + computerTrayHeight + keyboardInset + 20.0;
     final topContentPadding = _chatTopOverlayInset(context) + 8;
     final backgroundImageActive = _assistantBackgroundActive(context);
 
@@ -1053,7 +1097,7 @@ class _HomePageState extends State<HomePage>
               child: SizeChangedLayoutNotifier(
                 child: Builder(
                   builder: (context) =>
-                      _buildChatInputBar(context, isTablet: false),
+                      _buildChatInputWithTray(context, isTablet: false),
                 ),
               ),
             ),
@@ -1200,7 +1244,12 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildTabletBody(BuildContext context, ColorScheme cs) {
-    final bottomContentPadding = _controller.inputBarHeight + 16;
+    final workSession = context.watch<WorkSessionProvider>();
+    final double computerTrayHeight =
+        (workSession.isWorkMode && workSession.isAgentRunning) ? 52.0 : 0.0;
+    final double keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomContentPadding =
+        _controller.inputBarHeight + computerTrayHeight + keyboardInset + 20.0;
     final topContentPadding = _chatTopOverlayInset(context) + 8;
     final backgroundImageActive = _assistantBackgroundActive(context);
 
@@ -1250,7 +1299,10 @@ class _HomePageState extends State<HomePage>
               child: SizeChangedLayoutNotifier(
                 child: Builder(
                   builder: (context) {
-                    Widget input = _buildChatInputBar(context, isTablet: true);
+                    Widget input = _buildChatInputWithTray(
+                      context,
+                      isTablet: true,
+                    );
                     input = Align(
                       alignment: Alignment.bottomCenter,
                       heightFactor: 1,
@@ -1296,7 +1348,8 @@ class _HomePageState extends State<HomePage>
     required EdgeInsetsGeometry dividerPadding,
   }) {
     final assistant = context.watch<AssistantProvider>().currentAssistant;
-    final footer =
+    final workSession = context.watch<WorkSessionProvider>();
+    final promptButton =
         assistant?.allowConversationSystemPrompt == true &&
             !_controller.isCurrentConversationLoading &&
             !_controller.selecting
@@ -1306,11 +1359,21 @@ class _HomePageState extends State<HomePage>
             backgroundImageActive: _assistantBackgroundActive(context),
           )
         : null;
+
+    final effectiveFooter = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (workSession.isWorkMode) const WorkStepGroupWidget(),
+        if (promptButton != null) promptButton,
+      ],
+    );
+
     if (_controller.chatController.collapsedMessages.isEmpty) {
       return ChatEmptyStateSuggestions(
         topContentPadding: topContentPadding,
         bottomContentPadding: bottomContentPadding,
-        footer: footer,
+        footer: effectiveFooter,
         onSelectSuggestion: (prompt) => _controller.sendSuggestion(prompt),
       );
     }
@@ -1318,7 +1381,7 @@ class _HomePageState extends State<HomePage>
     final settings = context.watch<SettingsProvider>();
     final suggestionsEnabled = settings.isSuggestionGenerationEnabled;
     return MessageListView(
-      footer: footer,
+      footer: effectiveFooter,
       processingFilesMessageId: _controller.processingFilesMessageId,
       scrollController: _scrollController,
       listController: _controller.scrollCtrl.messageListController,
@@ -1436,7 +1499,9 @@ class _HomePageState extends State<HomePage>
       inputController: _inputController,
       mediaController: _mediaController,
       isTablet: isTablet,
-      isLoading: _controller.isCurrentConversationLoading,
+      isLoading:
+          _controller.isCurrentConversationLoading ||
+          context.watch<WorkSessionProvider>().isAgentRunning,
       isToolModel: _controller.isToolModel,
       isReasoningModel: _controller.isReasoningModel,
       isReasoningEnabled: _controller.isReasoningEnabled,
@@ -1485,6 +1550,52 @@ class _HomePageState extends State<HomePage>
         await _openContextUsagePopover();
       },
       onSend: (text) async {
+        final workSession = context.read<WorkSessionProvider>();
+        if (workSession.isWorkMode) {
+          debugPrint(
+            '[WorkMode Route] Routed to ManusAgentLoopService (not chat path)',
+          );
+          if (_controller.currentConversation == null ||
+              !_controller.currentConversation!.isWork) {
+            await _controller.createNewConversationAnimated(mode: 'work');
+          }
+          final cid =
+              _controller.currentConversation?.id ??
+              'conv_${DateTime.now().millisecondsSinceEpoch}';
+          await _controller.chatController.addMessage(
+            role: 'user',
+            content: text.text,
+          );
+          if (workSession.phase == WorkSessionPhase.waiting &&
+              workSession.pendingToolCallId != null) {
+            debugPrint(
+              '[WorkMode Route] Resuming waiting task with user response',
+            );
+            unawaited(
+              workSession.resumeWorkTaskWithUserAnswer(
+                text.text,
+                chatController: _controller.chatController,
+              ),
+            );
+          } else {
+            unawaited(
+              workSession.startWorkTask(
+                cid,
+                text.text,
+                chatController: _controller.chatController,
+              ),
+            );
+          }
+          if (PlatformUtils.isMobile) {
+            _controller.dismissKeyboard();
+          }
+          return ChatInputSubmissionResult.sent;
+        }
+        debugPrint('[ChatMode Route] Routed to standard chat generation path');
+        if (_controller.currentConversation != null &&
+            _controller.currentConversation!.isWork) {
+          await _controller.createNewConversationAnimated(mode: 'chat');
+        }
         final result = await _controller.sendMessage(text);
         if (!mounted) return result;
         if (PlatformUtils.isMobile &&
@@ -1493,7 +1604,13 @@ class _HomePageState extends State<HomePage>
         }
         return result;
       },
-      onStop: _controller.cancelStreaming,
+      onStop: () {
+        final workSession = context.read<WorkSessionProvider>();
+        if (workSession.isWorkMode && workSession.isAgentRunning) {
+          workSession.cancelWorkTask();
+        }
+        _controller.cancelStreaming();
+      },
       hasQueuedInput: _controller.currentQueuedInput != null,
       queuedPreviewText: _controller.currentQueuedInput?.input.text,
       onCancelQueuedInput: _controller.cancelQueuedMessage,
@@ -1514,6 +1631,23 @@ class _HomePageState extends State<HomePage>
       onClearContext: _controller.clearContext,
       onCompressContext: _handleDesktopCompressContext,
       backgroundImageActive: _assistantBackgroundActive(context),
+    );
+  }
+
+  Widget _buildChatInputWithTray(
+    BuildContext context, {
+    required bool isTablet,
+  }) {
+    final workSession = context.watch<WorkSessionProvider>();
+    final bool showTray =
+        workSession.isWorkMode && workSession.phase == WorkSessionPhase.running;
+    final chatInput = _buildChatInputBar(context, isTablet: isTablet);
+    if (!showTray) return chatInput;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [const WorkComputerTray(), chatInput],
     );
   }
 

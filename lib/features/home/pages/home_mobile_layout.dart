@@ -12,6 +12,7 @@ import '../../../core/providers/user_provider.dart';
 import '../../../core/providers/assistant_provider.dart';
 import '../../chat/widgets/frosted/chat_frosted_backdrop.dart';
 import '../../chat/widgets/chat_assistant_background.dart';
+import '../../work/widgets/segmented_mode_pill.dart';
 
 /// Mobile layout scaffold for the home page
 /// This widget handles only the structural layout - AppBar, drawer, body structure
@@ -154,7 +155,7 @@ class HomeMobileScaffold extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
-      centerTitle: false,
+      centerTitle: true,
       leadingWidth: 58,
       leading: Padding(
         padding: const EdgeInsetsDirectional.only(start: 14),
@@ -198,7 +199,7 @@ class HomeMobileScaffold extends StatelessWidget {
           ),
         ),
       ),
-      title: const SizedBox.shrink(),
+      title: const SegmentedModePill(),
       actions: [
         // Temporary chat circular button (40x40)
         Semantics(

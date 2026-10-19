@@ -335,11 +335,13 @@ class ChatService extends ChangeNotifier {
     String? title,
     bool reuseNewEntry = false,
     bool? temporary,
+    Map<String, dynamic>? extras,
   }) {
     return createConversation(
       assistantId: assistantId,
       title: title,
       isTemporary: temporary ?? true,
+      extras: extras,
     );
   }
 

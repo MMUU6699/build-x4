@@ -73,3 +73,5 @@ internationalization.md
 /docs/performance/ios-device-*/
 /tool/ios_performance/
 /ws_errors.txt
+/ai-manus/
+supabase/.temp/

@@ -52,6 +52,7 @@ import '../../../core/database/chat_database_repository.dart'
 import '../utils/chat_layout_constants.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/share_destination_sheet.dart';
+import '../../work/providers/work_session_provider.dart';
 
 enum ChatSelectionMode { share, delete }
 
@@ -239,9 +240,23 @@ class HomePageController extends ChangeNotifier {
   /// Reveal a conversation opened from a notification or scheduled run history.
   VoidCallback? onRevealConversation;
 
-  // Desktop global-search mode
   bool _isGlobalSearchMode = false;
   String _globalSearchQuery = '';
+
+  // Mode conversation state tracking (Chat vs Work isolation)
+  String? _lastChatConversationId;
+  String? _lastWorkConversationId;
+
+  String? get lastChatConversationId => _lastChatConversationId;
+  String? get lastWorkConversationId => _lastWorkConversationId;
+
+  bool get isWorkMode {
+    try {
+      return _context.read<WorkSessionProvider>().isWorkMode;
+    } catch (_) {
+      return false;
+    }
+  }
 
   // Message-level spotlight target after selecting a global search result
   String? _spotlightMessageId;
@@ -858,7 +873,14 @@ class HomePageController extends ChangeNotifier {
           _context.read<SettingsProvider>().autoScrollIdleSeconds,
       getTopRevealInset: () =>
           kToolbarHeight + MediaQuery.paddingOf(_context).top,
-      isGenerating: () => _chatController.isCurrentConversationLoading,
+      isGenerating: () {
+        final isChatGenerating = _chatController.isCurrentConversationLoading;
+        bool isWorkRunning = false;
+        try {
+          isWorkRunning = _context.read<WorkSessionProvider>().isAgentRunning;
+        } catch (_) {}
+        return isChatGenerating || isWorkRunning;
+      },
     );
   }
 
@@ -1058,15 +1080,29 @@ class HomePageController extends ChangeNotifier {
   Future<void> initChat() async {
     final prefs = _context.read<SettingsProvider>();
     final assistantProvider = _context.read<AssistantProvider>();
+    WorkSessionProvider? workSession;
+    try {
+      workSession = _context.read<WorkSessionProvider>();
+    } catch (_) {}
     try {
       // The two startups are independent of each other.
       await Future.wait([assistantProvider.loaded, _chatService.init()]);
+      final isWork = workSession?.isWorkMode ?? false;
+
       if (prefs.newChatOnLaunch) {
-        await _createNewConversation();
+        await _createNewConversation(mode: isWork ? 'work' : 'chat');
       } else {
-        final conversations = _chatService.getAllConversations();
+        final allConversations = _chatService.getAllConversations();
+        final conversations = isWork
+            ? allConversations.where((c) => c.isWork).toList()
+            : allConversations.where((c) => !c.isWork).toList();
         if (conversations.isNotEmpty) {
           final recent = conversations.first;
+          if (isWork) {
+            _lastWorkConversationId = recent.id;
+          } else {
+            _lastChatConversationId = recent.id;
+          }
           _chatService.setCurrentConversation(recent.id);
           // Assistant restore and window load are independent; the message
           // list already tolerates a one-frame missing-assistant fallback.
@@ -1092,10 +1128,8 @@ class HomePageController extends ChangeNotifier {
           notifyListeners();
           _scheduleStartupWarmup();
         } else {
-          // No conversations exist — create a new empty one so the UI
-          // correctly shows the temporary-chat toggle button instead of
-          // falling back to "new conversation" button.
-          await _createNewConversation();
+          // No conversations exist for current mode — create a new empty one
+          await _createNewConversation(mode: isWork ? 'work' : 'chat');
         }
       }
       await _activateComposerDraft();
@@ -1516,6 +1550,14 @@ class HomePageController extends ChangeNotifier {
       }
       _viewModel.commitConversationSwitch(prepared);
       _clearSelectionState();
+      final conv = _chatService.getConversation(id);
+      if (conv != null) {
+        if (conv.isWork) {
+          _lastWorkConversationId = conv.id;
+        } else {
+          _lastChatConversationId = conv.id;
+        }
+      }
       notifyListeners();
 
       try {
@@ -1546,6 +1588,14 @@ class HomePageController extends ChangeNotifier {
       if (prepared == null) return;
       _viewModel.commitConversationSwitch(prepared);
       _clearSelectionState();
+      final conv = _chatService.getConversation(id);
+      if (conv != null) {
+        if (conv.isWork) {
+          _lastWorkConversationId = conv.id;
+        } else {
+          _lastChatConversationId = conv.id;
+        }
+      }
       notifyListeners();
     }
 
@@ -1553,6 +1603,64 @@ class HomePageController extends ChangeNotifier {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _inputFocus.requestFocus();
       });
+    }
+  }
+
+  Future<void> switchMode(AppMode newMode) async {
+    final current = currentConversation;
+    final currentId = current?.id;
+    final currentIsWork = current?.isWork ?? false;
+
+    if (newMode == AppMode.work) {
+      if (!currentIsWork && currentId != null) {
+        _lastChatConversationId = currentId;
+      }
+
+      String? targetId = _lastWorkConversationId;
+      if (targetId == null || _chatService.getConversation(targetId) == null) {
+        final workConvs = _chatService
+            .getAllConversations()
+            .where(
+              (c) => c.isWork && !_chatService.isTemporaryConversation(c.id),
+            )
+            .toList();
+        if (workConvs.isNotEmpty) {
+          targetId = workConvs.first.id;
+        }
+      }
+
+      if (targetId != null &&
+          targetId != currentId &&
+          _chatService.getConversation(targetId) != null) {
+        await switchConversationAnimated(targetId);
+      } else if (currentId == null || !currentIsWork) {
+        await createNewConversationAnimated(mode: 'work');
+      }
+    } else {
+      if (currentIsWork && currentId != null) {
+        _lastWorkConversationId = currentId;
+      }
+
+      String? targetId = _lastChatConversationId;
+      if (targetId == null || _chatService.getConversation(targetId) == null) {
+        final chatConvs = _chatService
+            .getAllConversations()
+            .where(
+              (c) => !c.isWork && !_chatService.isTemporaryConversation(c.id),
+            )
+            .toList();
+        if (chatConvs.isNotEmpty) {
+          targetId = chatConvs.first.id;
+        }
+      }
+
+      if (targetId != null &&
+          targetId != currentId &&
+          _chatService.getConversation(targetId) != null) {
+        await switchConversationAnimated(targetId);
+      } else if (currentId == null || currentIsWork) {
+        await createNewConversationAnimated(mode: 'chat');
+      }
     }
   }
 
@@ -1576,6 +1684,7 @@ class HomePageController extends ChangeNotifier {
 
   Future<Conversation?> createNewConversationAnimated({
     bool preserveDraft = false,
+    String? mode,
   }) async {
     // Cancel any in-flight conversation switch fetch.
     final serial = ++_switchSerial;
@@ -1598,6 +1707,7 @@ class HomePageController extends ChangeNotifier {
     final conversation = await _createNewConversation(
       preserveDraft: preserveDraft,
       assistantId: assistantId,
+      mode: mode,
     );
     if (conversation == null ||
         !_context.mounted ||
@@ -1625,17 +1735,25 @@ class HomePageController extends ChangeNotifier {
   Future<Conversation?> _createNewConversation({
     bool preserveDraft = false,
     String? assistantId,
+    String? mode,
   }) async {
     if (_composerDrafts == null) {
       _exitUserMessageEdit(clearDraft: !preserveDraft);
     }
     _translations.clear();
     final previousId = currentConversation?.id;
+    final effectiveMode = mode ?? (isWorkMode ? 'work' : 'chat');
     final conversation = await _viewModel.createNewConversation(
       assistantId: assistantId,
+      mode: effectiveMode,
     );
     if (conversation == null || currentConversation?.id != conversation.id) {
       return conversation;
+    }
+    if (conversation.isWork) {
+      _lastWorkConversationId = conversation.id;
+    } else {
+      _lastChatConversationId = conversation.id;
     }
     if (currentConversation?.id != null &&
         currentConversation!.id != previousId) {

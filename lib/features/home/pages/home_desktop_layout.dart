@@ -27,6 +27,7 @@ import '../../../desktop/hotkeys/sidebar_tab_bus.dart';
 import '../../chat/widgets/frosted/chat_frosted_backdrop.dart';
 import '../widgets/assistant_avatar.dart';
 import '../widgets/assistant_entry_actions.dart';
+import '../../work/widgets/segmented_mode_pill.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
 
 /// Desktop/Tablet layout scaffold for the home page
@@ -507,6 +508,8 @@ class HomeDesktopScaffold extends StatelessWidget {
   }) {
     final l10n = AppLocalizations.of(context)!;
     return [
+      const SegmentedModePill(),
+      const SizedBox(width: 8),
       if (_isDesktop && workspaceBound)
         Tooltip(
           message: l10n.workspaceDeskBarToggle,

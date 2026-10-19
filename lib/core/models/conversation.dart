@@ -43,6 +43,11 @@ class Conversation {
   // Feature bag (workspace binding, …)
   final Map<String, dynamic> extras;
 
+  /// Current conversation operating mode ('chat' | 'work').
+  String get mode => (extras['mode'] as String?) ?? 'chat';
+  bool get isWork => mode == 'work';
+  bool get isChat => mode != 'work';
+
   Conversation({
     String? id,
     required this.title,
@@ -61,7 +66,8 @@ class Conversation {
     int? lastMemoryExtractedOrder,
     this.chatModelProvider,
     this.chatModelId,
-    this.extras = const <String, dynamic>{},
+    String? mode,
+    Map<String, dynamic>? extras,
   }) : id = id ?? const Uuid().v4(),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now(),
@@ -71,7 +77,8 @@ class Conversation {
        versionSelections = versionSelections ?? <String, int>{},
        lastSummarizedMessageCount = lastSummarizedMessageCount ?? 0,
        chatSuggestions = chatSuggestions ?? [],
-       lastMemoryExtractedOrder = lastMemoryExtractedOrder ?? -1;
+       lastMemoryExtractedOrder = lastMemoryExtractedOrder ?? -1,
+       extras = {if (extras != null) ...extras, if (mode != null) 'mode': mode};
 
   Conversation copyWith({
     String? id,
@@ -91,6 +98,7 @@ class Conversation {
     int? lastMemoryExtractedOrder,
     String? chatModelProvider,
     String? chatModelId,
+    String? mode,
     Map<String, dynamic>? extras,
     bool clearSummary = false,
     bool clearInjectedMemoryHash = false,
@@ -120,7 +128,9 @@ class Conversation {
           ? null
           : (chatModelProvider ?? this.chatModelProvider),
       chatModelId: clearChatModel ? null : (chatModelId ?? this.chatModelId),
-      extras: extras ?? this.extras,
+      extras: mode != null
+          ? {...(extras ?? this.extras), 'mode': mode}
+          : (extras ?? this.extras),
     );
   }
 

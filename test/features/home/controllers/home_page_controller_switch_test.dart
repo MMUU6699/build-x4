@@ -112,10 +112,12 @@ class _ControlledChatService extends ChatService {
     String? assistantId,
     bool? temporary,
     bool reuseNewEntry = false,
+    Map<String, dynamic>? extras,
   }) async {
     final conversation = Conversation(
       title: title ?? 'Draft',
       assistantId: assistantId,
+      extras: extras,
     );
     _draftConversations[conversation.id] = conversation;
     _messagesByConversation[conversation.id] = <ChatMessage>[];

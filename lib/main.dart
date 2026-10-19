@@ -39,6 +39,7 @@ import 'features/workspace/pages/workspaces_page.dart';
 import 'features/workspace/terminal/open_terminal.dart';
 import 'features/workspace/widgets/files/conversation_files_panel.dart';
 import 'features/workspace/workspace_navigation.dart';
+import 'features/work/providers/work_session_provider.dart';
 import 'l10n/app_localizations.dart';
 import 'shared/widgets/app_overlays.dart';
 import 'shared/widgets/floating_ipad_padding.dart';
@@ -223,6 +224,15 @@ class MyApp extends StatelessWidget {
             settings: ctx.read<SettingsProvider>(),
             assistants: ctx.read<AssistantProvider>(),
           ),
+        ),
+        ChangeNotifierProvider(
+          create: (ctx) {
+            final provider = WorkSessionProvider(
+              preferences: ctx.read<AppPreferences>(),
+            );
+            provider.initFromPreferences();
+            return provider;
+          },
         ),
       ],
       child: Builder(
