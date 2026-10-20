@@ -1,10 +1,13 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
 import '../../../../icons/lucide_adapter.dart';
 import '../../models/work_tool_event.dart';
 
-class McpToolView extends StatelessWidget {
-  const McpToolView({super.key, required this.event});
+/// Fallback view for a real tool call that has no dedicated renderer.
+class GenericToolView extends StatelessWidget {
+  const GenericToolView({super.key, required this.event});
 
   final WorkToolEvent event;
 
@@ -13,7 +16,7 @@ class McpToolView extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final jsonEncoder = const JsonEncoder.withIndent('  ');
 
-    String formattedArgs = '';
+    String formattedArgs;
     try {
       formattedArgs = jsonEncoder.convert(event.arguments);
     } catch (_) {
@@ -28,7 +31,6 @@ class McpToolView extends StatelessWidget {
 
     return Column(
       children: [
-        // Header bar
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
@@ -43,33 +45,25 @@ class McpToolView extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(Lucide.Plug, size: 15, color: Colors.purpleAccent),
-              const SizedBox(width: 8),
-              Text(
-                event.toolName,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
+              Icon(
+                Lucide.Wrench,
+                size: 15,
+                color: isDark ? Colors.white70 : const Color(0xFF555555),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.purpleAccent.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'MCP',
+              Expanded(
+                child: Text(
+                  event.toolName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.purpleAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : Colors.black87,
                   ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -94,7 +88,6 @@ class McpToolView extends StatelessWidget {
             ],
           ),
         ),
-        // Content area: Arguments + Result
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),

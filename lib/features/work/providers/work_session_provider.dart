@@ -1,14 +1,15 @@
 import 'dart:async';
-import 'package:dio/dio.dart';
+
+import 'package:dio/dio.dart' show CancelToken;
 import 'package:flutter/foundation.dart';
+
 import '../../../core/config/supabase_config.dart';
 import '../../../core/services/preferences/app_preferences.dart';
 import '../../../core/services/workspace/work_event_persistence_service.dart';
-import '../models/work_plan.dart';
 import '../models/work_task_result.dart';
 import '../models/work_tool_event.dart';
+import '../models/work_turn.dart';
 import '../services/manus_agent_loop_service.dart';
-import '../../home/controllers/chat_controller.dart';
 
 enum AppMode {
   chat,
@@ -20,7 +21,6 @@ enum AppMode {
 
 enum WorkSessionPhase {
   idle,
-  pending,
   running,
   waiting,
   completed,
@@ -33,6 +33,8 @@ enum WorkSessionPhase {
   bool get isIdle => this == WorkSessionPhase.idle;
 }
 
+/// Owns the Work thread: one [WorkTurn] per user prompt, live events, the
+/// computer panel selection, and persisted history.
 class WorkSessionProvider extends ChangeNotifier {
   WorkSessionProvider({
     ManusAgentLoopService? agentService,
@@ -57,99 +59,160 @@ class WorkSessionProvider extends ChangeNotifier {
   bool get isAgentRunning => _phase == WorkSessionPhase.running;
   bool get isBusy => _phase.isBusy;
 
-  /// In ai-manus useSessionPhase.ts:
-  /// showThinking is true ONLY when phase is running AND no tool currently has status 'running'/'calling'
-  bool get showThinking {
-    if (_phase != WorkSessionPhase.running) return false;
-    final hasCallingTool = _timelineEvents.any(
-      (e) => e.status == 'running' || e.status == 'calling',
-    );
-    return !hasCallingTool;
-  }
+  final List<WorkTurn> _turns = [];
+  List<WorkTurn> get turns => List.unmodifiable(_turns);
 
-  WorkPlan? _activePlan;
-  WorkPlan? get activePlan => _activePlan;
+  WorkTurn? get currentTurn => _turns.isEmpty ? null : _turns.last;
+
+  bool get showThinking {
+    final turn = currentTurn;
+    if (_phase != WorkSessionPhase.running || turn == null) return false;
+    return !turn.events.any(
+      (event) => event.status == 'running' || event.status == 'calling',
+    );
+  }
 
   String? _currentThinking;
   String? get currentThinking => _currentThinking;
 
-  final List<WorkToolEvent> _timelineEvents = [];
-  List<WorkToolEvent> get timelineEvents => List.unmodifiable(_timelineEvents);
+  bool _startingComputer = false;
+  bool get isStartingComputer => _startingComputer;
 
-  int? _scrubbedIndex;
-  int? get scrubbedIndex => _scrubbedIndex;
-
-  bool _isComputerOpen = false;
-  bool get isComputerOpen => _isComputerOpen;
-
-  WorkTaskResult? _taskResult;
-  WorkTaskResult? get taskResult => _taskResult;
-
-  DateTime? _taskStartTime;
-  int _workedDurationSeconds = 0;
-  int get workedDurationSeconds => _workedDurationSeconds;
-
-  String? _notifyMessage;
-  String? get notifyMessage => _notifyMessage;
-
-  String? _errorMessage;
-  String? get errorMessage => _errorMessage;
-
-  String? _lastPrompt;
-  String? get lastPrompt => _lastPrompt;
+  String? get notifyMessage => currentTurn?.introMessage;
+  String? get errorMessage => currentTurn?.error;
+  int get workedDurationSeconds => currentTurn?.durationSeconds ?? 0;
+  WorkTaskResult? get taskResult => currentTurn?.result;
+  String? get lastPrompt => currentTurn?.prompt;
+  String? get pendingToolCallId => currentTurn?.pendingToolCallId;
 
   String? _activeConversationId;
   String? get activeConversationId => _activeConversationId;
 
-  String? _pendingToolCallId;
-  String? get pendingToolCallId => _pendingToolCallId;
+  bool _isComputerOpen = false;
+  bool get isComputerOpen => _isComputerOpen;
 
-  List<Map<String, dynamic>> _pendingMessages = [];
-  List<Map<String, dynamic>> get pendingMessages =>
-      List.unmodifiable(_pendingMessages);
+  String? _computerTurnId;
+  String? _computerEventId;
+
+  WorkTurn? get computerTurn {
+    if (_turns.isEmpty) return null;
+    final id = _computerTurnId;
+    if (id == null) return _turns.last;
+    for (final turn in _turns) {
+      if (turn.id == id) return turn;
+    }
+    return _turns.last;
+  }
+
+  WorkToolEvent? get computerEvent {
+    final turn = computerTurn;
+    if (turn == null || turn.events.isEmpty) return null;
+    final id = _computerEventId;
+    if (id != null) {
+      for (final event in turn.events) {
+        if (event.id == id) return event;
+      }
+    }
+    return turn.events.last;
+  }
+
+  WorkToolEvent? get currentEvent => computerEvent;
+
+  final Map<String, String> _signedScreenshotUrls = {};
+
+  /// Screenshot URL for the live session, or a signed URL for persisted turns.
+  /// Returns null while signing is in flight or when the file is unavailable.
+  String? screenshotUrlFor(WorkToolEvent event) {
+    final live = event.screenshotUrl;
+    if (live != null && live.isNotEmpty) return live;
+    final path = event.screenshotPath;
+    if (path == null || path.isEmpty) return null;
+    return _signedScreenshotUrls[path];
+  }
 
   CancelToken? _cancelToken;
   StreamSubscription<ManusAgentEvent>? _agentSubscription;
+  Timer? _saveDebounce;
+  int _turnSequence = 0;
 
-  bool get isLive =>
-      _scrubbedIndex == null ||
-      _timelineEvents.isEmpty ||
-      _scrubbedIndex == (_timelineEvents.length - 1);
-
-  String _daytonaStatus = 'connected';
+  String _daytonaStatus = 'unknown';
   String get daytonaStatus => _daytonaStatus;
 
-  String _supabaseStatus = 'connected';
+  String _supabaseStatus = 'unknown';
   String get supabaseStatus => _supabaseStatus;
 
   bool get isDaytonaConnected => _daytonaStatus == 'connected';
+  bool get daytonaUnavailable => _daytonaStatus == 'disconnected';
+  bool get daytonaChecking => _daytonaStatus == 'unknown';
 
-  Future<void> refreshIntegrations() async {
-    final daytona = await _persistence.fetchIntegrationStatus('daytona');
-    if (daytona != null && daytona['status'] != null) {
-      _daytonaStatus = daytona['status'].toString();
+  /// Work needs a real account: anonymous guest sessions must not own a
+  /// sandbox, screenshots, or persisted turns.
+  bool get isSignedInForWork {
+    if (SupabaseConfig.isUnconfigured) return true;
+    final user = SupabaseConfig.currentUser;
+    return user != null && !user.isAnonymous;
+  }
+
+  /// Leave the anonymous guest session so the auth gate shows the sign-in page.
+  Future<void> signInForWork() async {
+    if (SupabaseConfig.isUnconfigured) return;
+    try {
+      await SupabaseConfig.client.auth.signOut();
+    } finally {
+      await SupabaseConfig.disableGuestMode();
     }
-    _supabaseStatus = SupabaseConfig.isUnconfigured
-        ? 'disconnected'
-        : 'connected';
     notifyListeners();
   }
 
-  WorkToolEvent? get currentEvent {
-    if (_timelineEvents.isEmpty) return null;
-    if (_scrubbedIndex != null &&
-        _scrubbedIndex! >= 0 &&
-        _scrubbedIndex! < _timelineEvents.length) {
-      return _timelineEvents[_scrubbedIndex!];
+  Future<void> refreshIntegrations() async {
+    final configured = !SupabaseConfig.isUnconfigured;
+    final user = SupabaseConfig.currentUser;
+
+    if (!configured) {
+      _supabaseStatus = 'not_configured';
+      _daytonaStatus = 'not_configured';
+    } else if (user == null) {
+      _supabaseStatus = 'signed_out';
+      _daytonaStatus = 'signed_out';
+    } else if (user.isAnonymous) {
+      _supabaseStatus = 'anonymous';
+      _daytonaStatus = 'signed_out';
+    } else {
+      _supabaseStatus = 'connected';
+      try {
+        final health = await _agentService.checkComputerHealth();
+        _daytonaStatus = health['status']?.toString() ?? 'disconnected';
+      } catch (e) {
+        debugPrint('[WorkSessionProvider] computer health check failed: $e');
+        _daytonaStatus = 'disconnected';
+      }
     }
-    return _timelineEvents.last;
+
+    await _persistence.recordIntegrationStatus(
+      provider: 'supabase',
+      status: _supabaseStatus,
+      details: switch (_supabaseStatus) {
+        'connected' => 'Authenticated user session',
+        'anonymous' => 'Anonymous guest session',
+        'signed_out' => 'No active session',
+        _ => 'Supabase is not configured',
+      },
+    );
+    if (!configured || user == null || user.isAnonymous) {
+      await _persistence.recordIntegrationStatus(
+        provider: 'daytona',
+        status: _daytonaStatus,
+        details: 'Work requires a signed-in account',
+      );
+    }
+    notifyListeners();
   }
 
   void initFromPreferences() {
     final savedMode = preferences?.getString(_prefModeKey);
     if (savedMode == 'work') {
       _mode = AppMode.work;
-      refreshIntegrations();
+      unawaited(refreshIntegrations());
       notifyListeners();
     }
   }
@@ -159,7 +222,7 @@ class WorkSessionProvider extends ChangeNotifier {
     _mode = newMode;
     preferences?.setString(_prefModeKey, newMode.name);
     if (newMode.isWork) {
-      refreshIntegrations();
+      unawaited(refreshIntegrations());
     }
     notifyListeners();
   }
@@ -168,272 +231,342 @@ class WorkSessionProvider extends ChangeNotifier {
     setMode(_mode == AppMode.chat ? AppMode.work : AppMode.chat);
   }
 
-  void openComputer({int? eventIndex}) {
+  void openComputer({String? turnId, String? eventId}) {
+    _computerTurnId = turnId;
+    _computerEventId = eventId;
     _isComputerOpen = true;
-    if (eventIndex != null &&
-        eventIndex >= 0 &&
-        eventIndex < _timelineEvents.length) {
-      _scrubbedIndex = eventIndex;
-    }
     notifyListeners();
   }
 
   void closeComputer() {
     _isComputerOpen = false;
+    _computerTurnId = null;
+    _computerEventId = null;
     notifyListeners();
-  }
-
-  void toggleComputer() {
-    _isComputerOpen = !_isComputerOpen;
-    notifyListeners();
-  }
-
-  void scrubTo(int index) {
-    if (index >= 0 && index < _timelineEvents.length) {
-      _scrubbedIndex = index;
-      notifyListeners();
-    }
-  }
-
-  void jumpToLive() {
-    _scrubbedIndex = null;
-    notifyListeners();
-  }
-
-  void skipBack() {
-    if (_timelineEvents.isEmpty) return;
-    final currentIndex = _scrubbedIndex ?? (_timelineEvents.length - 1);
-    if (currentIndex > 0) {
-      scrubTo(currentIndex - 1);
-    }
-  }
-
-  void skipForward() {
-    if (_timelineEvents.isEmpty) return;
-    final currentIndex = _scrubbedIndex ?? (_timelineEvents.length - 1);
-    if (currentIndex < _timelineEvents.length - 1) {
-      scrubTo(currentIndex + 1);
-    } else {
-      jumpToLive();
-    }
   }
 
   Future<void> loadSessionForConversation(String conversationId) async {
+    if (conversationId == _activeConversationId && _turns.isNotEmpty) return;
+    if (_phase == WorkSessionPhase.running) {
+      await cancelWorkTask();
+    }
     _activeConversationId = conversationId;
-    _timelineEvents.clear();
-    _activePlan = null;
-    _taskResult = null;
-    _scrubbedIndex = null;
+    _turns.clear();
+    _computerTurnId = null;
+    _computerEventId = null;
     _currentThinking = null;
-    _pendingToolCallId = null;
-    _pendingMessages.clear();
     _phase = WorkSessionPhase.idle;
     notifyListeners();
 
-    try {
-      final events = await _persistence.fetchToolEvents(conversationId);
-      if (events.isNotEmpty) {
-        _timelineEvents.addAll(events);
-        _phase = WorkSessionPhase.completed;
+    final loaded = await _persistence.fetchWorkTurns(conversationId);
+    if (loaded.isEmpty) return;
+
+    for (final turn in loaded) {
+      _turns.add(_normalizeLoadedTurn(turn));
+    }
+    _phase = _phaseForTurn(_turns.last);
+    for (final turn in _turns) {
+      for (final event in turn.events) {
+        final path = event.screenshotPath;
+        if (path != null && path.isNotEmpty) {
+          unawaited(_signScreenshot(path));
+        }
       }
-      notifyListeners();
-    } catch (_) {}
+    }
+    notifyListeners();
   }
 
-  Future<void> startWorkTask(
-    String conversationId,
-    String prompt, {
-    ChatController? chatController,
-  }) async {
+  WorkTurn _normalizeLoadedTurn(WorkTurn turn) {
+    if (turn.status != 'running') return turn;
+    return turn.copyWith(
+      status: 'error',
+      error: 'The app closed before this task finished. Send it again.',
+    );
+  }
+
+  WorkSessionPhase _phaseForTurn(WorkTurn turn) {
+    return switch (turn.status) {
+      'running' => WorkSessionPhase.running,
+      'waiting' => WorkSessionPhase.waiting,
+      'completed' => WorkSessionPhase.completed,
+      'error' || 'stopped' => WorkSessionPhase.error,
+      _ => WorkSessionPhase.idle,
+    };
+  }
+
+  Future<void> startWorkTask(String conversationId, String prompt) async {
     if (_phase == WorkSessionPhase.running) {
       await cancelWorkTask();
     }
 
+    _saveDebounce?.cancel();
+    _agentSubscription?.cancel();
     _activeConversationId = conversationId;
     _phase = WorkSessionPhase.running;
-    _taskStartTime = DateTime.now();
-    _workedDurationSeconds = 0;
     _currentThinking = null;
-    _notifyMessage = null;
-    _errorMessage = null;
-    _lastPrompt = prompt;
-    _cancelToken = CancelToken();
-    _taskResult = null;
-    _scrubbedIndex = null;
-    _timelineEvents.clear();
-    _pendingToolCallId = null;
-    _pendingMessages.clear();
+    _computerTurnId = null;
+    _computerEventId = null;
+
+    final turn = WorkTurn(
+      id: 'turn_${DateTime.now().microsecondsSinceEpoch}_${_turnSequence++}',
+      conversationId: conversationId,
+      prompt: prompt,
+      status: 'running',
+      startedAt: DateTime.now(),
+    );
+    _turns.add(turn);
     notifyListeners();
 
-    await _persistence.updateWorkSession(
-      conversationId: conversationId,
-      phase: _phase.name,
-      startedAt: _taskStartTime,
+    unawaited(_persistence.saveWorkTurn(turn));
+    unawaited(
+      _persistence.updateWorkSession(
+        conversationId: conversationId,
+        phase: 'running',
+        startedAt: turn.startedAt,
+      ),
     );
 
+    _cancelToken = CancelToken();
     final eventStream = _agentService.runAgentLoop(
       conversationId: conversationId,
       userRequest: prompt,
-      initialPlan: _activePlan,
       cancelToken: _cancelToken,
     );
 
     _agentSubscription = eventStream.listen(
-      (event) => _handleAgentEvent(event, conversationId, chatController),
-      onError: (err) {
-        _phase = WorkSessionPhase.error;
-        _errorMessage = err.toString();
-        _currentThinking = 'Error: $err';
-        notifyListeners();
+      (event) => _handleAgentEvent(event, turn.id),
+      onError: (Object err) {
+        _finishWithError(turn.id, err.toString());
       },
       onDone: () {
-        if (_phase == WorkSessionPhase.running) {
-          _phase = WorkSessionPhase.completed;
+        final active = _turnById(turn.id);
+        if (active == null) return;
+        if (active.status == 'running') {
+          _finishWithError(
+            turn.id,
+            'The task ended without a final result. Nothing was reported as '
+            'completed.',
+          );
+        } else {
+          _currentThinking = null;
+          notifyListeners();
         }
-        _currentThinking = null;
-        notifyListeners();
       },
       cancelOnError: false,
     );
   }
 
-  Future<void> resumeWorkTaskWithUserAnswer(
-    String answer, {
-    ChatController? chatController,
-  }) async {
+  Future<void> resumeWorkTaskWithUserAnswer(String answer) async {
+    final turn = currentTurn;
     final cid = _activeConversationId;
-    final toolCallId = _pendingToolCallId;
-    final cachedMessages = List<Map<String, dynamic>>.from(_pendingMessages);
-    if (cid == null || toolCallId == null) return;
+    final toolCallId = turn?.pendingToolCallId;
+    if (turn == null ||
+        cid == null ||
+        toolCallId == null ||
+        toolCallId.isEmpty ||
+        turn.status != 'waiting') {
+      return;
+    }
 
     _phase = WorkSessionPhase.running;
     _currentThinking = 'Resuming task...';
-    _pendingToolCallId = null;
-    _pendingMessages.clear();
+    _updateTurn(turn.copyWith(status: 'running', pendingToolCallId: ''));
     notifyListeners();
 
     _cancelToken = CancelToken();
-
     final eventStream = _agentService.runAgentLoop(
       conversationId: cid,
       userRequest: answer,
-      initialPlan: _activePlan,
       cancelToken: _cancelToken,
-      existingMessages: cachedMessages,
       pendingToolCallId: toolCallId,
     );
 
     _agentSubscription = eventStream.listen(
-      (event) => _handleAgentEvent(event, cid, chatController),
-      onError: (err) {
-        _phase = WorkSessionPhase.error;
-        _errorMessage = err.toString();
-        _currentThinking = 'Error: $err';
-        notifyListeners();
+      (event) => _handleAgentEvent(event, turn.id),
+      onError: (Object err) {
+        _finishWithError(turn.id, err.toString());
       },
       onDone: () {
-        if (_phase == WorkSessionPhase.running) {
-          _phase = WorkSessionPhase.completed;
+        final active = _turnById(turn.id);
+        if (active != null && active.status == 'running') {
+          _finishWithError(
+            turn.id,
+            'The task ended without a final result. Nothing was reported as '
+            'completed.',
+          );
         }
-        _currentThinking = null;
-        notifyListeners();
       },
       cancelOnError: false,
     );
   }
 
-  void _handleAgentEvent(
-    ManusAgentEvent event,
-    String conversationId,
-    ChatController? chatController,
-  ) {
+  void _handleAgentEvent(ManusAgentEvent event, String turnId) {
+    final turn = _turnById(turnId);
+    if (turn == null) return;
+
+    if (event is ManusStartingEvent) {
+      _currentThinking = null;
+      _startingComputer = true;
+      notifyListeners();
+      return;
+    }
+
+    _startingComputer = false;
+
     if (event is ManusThinkingEvent) {
       _currentThinking = event.text;
       notifyListeners();
-    } else if (event is ManusPlanEvent) {
-      _activePlan = event.plan;
-      notifyListeners();
-    } else if (event is ManusToolStartedEvent) {
+      return;
+    }
+
+    if (event is ManusToolStartedEvent) {
       _currentThinking = event.toolEvent.brief;
-      _timelineEvents.add(event.toolEvent);
-      if (isLive) {
-        _scrubbedIndex = null;
-      }
+      final events = _upsertEvent(turn.events, event.toolEvent);
+      _updateTurn(turn.copyWith(events: events));
       notifyListeners();
-    } else if (event is ManusToolFinishedEvent) {
-      final idx = _timelineEvents.indexWhere((e) => e.id == event.toolEvent.id);
-      if (idx != -1) {
-        _timelineEvents[idx] = event.toolEvent;
-      } else {
-        _timelineEvents.add(event.toolEvent);
+      return;
+    }
+
+    if (event is ManusToolFinishedEvent) {
+      final events = _upsertEvent(turn.events, event.toolEvent);
+      _updateTurn(turn.copyWith(events: events));
+      final path = event.toolEvent.screenshotPath;
+      if (path != null && path.isNotEmpty) {
+        unawaited(_signScreenshot(path));
       }
+      _queueSave();
       notifyListeners();
-    } else if (event is ManusMessageNotifyEvent) {
-      _notifyMessage = event.message;
+      return;
+    }
+
+    if (event is ManusMessageNotifyEvent) {
       _currentThinking = event.message;
+      _updateTurn(turn.copyWith(introMessage: event.message));
+      _queueSave();
       notifyListeners();
-    } else if (event is ManusMessageAskEvent) {
+      return;
+    }
+
+    if (event is ManusMessageAskEvent) {
       _phase = WorkSessionPhase.waiting;
-      _pendingToolCallId = event.toolCallId;
-      _pendingMessages = event.messages;
       _currentThinking = event.question;
-      _notifyMessage = event.question;
-      if (chatController != null && event.question.isNotEmpty) {
-        unawaited(
-          chatController.addMessage(role: 'assistant', content: event.question),
-        );
-      }
+      _updateTurn(
+        turn.copyWith(
+          status: 'waiting',
+          question: event.question,
+          pendingToolCallId: event.toolCallId,
+        ),
+      );
+      _flushTurnSave();
+      unawaited(
+        _persistence.updateWorkSession(
+          conversationId: turn.conversationId,
+          phase: 'waiting',
+        ),
+      );
       notifyListeners();
-    } else if (event is ManusTaskCompletedEvent) {
-      _taskResult = event.result;
+      return;
+    }
+
+    if (event is ManusTaskCompletedEvent) {
       _phase = WorkSessionPhase.completed;
       _currentThinking = null;
-      if (_taskStartTime != null) {
-        _workedDurationSeconds = DateTime.now()
-            .difference(_taskStartTime!)
-            .inSeconds;
-        if (_workedDurationSeconds < 1) _workedDurationSeconds = 1;
-      }
-      if (chatController != null && event.result.summary.isNotEmpty) {
-        unawaited(
-          chatController.addMessage(
-            role: 'assistant',
-            content: event.result.summary,
-          ),
-        );
-      }
-      _persistence.updateWorkSession(
-        conversationId: conversationId,
-        phase: _phase.name,
-        endedAt: DateTime.now(),
+      final duration = DateTime.now().difference(turn.startedAt).inSeconds;
+      _updateTurn(
+        turn.copyWith(
+          status: 'completed',
+          finalAnswer: event.result.summary,
+          result: event.result,
+          durationSeconds: duration < 1 ? 1 : duration,
+          pendingToolCallId: '',
+        ),
+      );
+      _flushTurnSave();
+      unawaited(
+        _persistence.updateWorkSession(
+          conversationId: turn.conversationId,
+          phase: 'completed',
+          endedAt: DateTime.now(),
+        ),
       );
       notifyListeners();
-    } else if (event is ManusErrorEvent) {
-      _phase = WorkSessionPhase.error;
-      _errorMessage = event.error;
-      _currentThinking = 'Error: ${event.error}';
-      _persistence.updateWorkSession(
-        conversationId: conversationId,
-        phase: _phase.name,
-        endedAt: DateTime.now(),
-      );
-      notifyListeners();
+      return;
+    }
+
+    if (event is ManusErrorEvent) {
+      _finishWithError(turnId, event.error);
     }
   }
 
-  Future<void> resumeWithTakeoverFeedback(
-    String summary, {
-    bool persistLogin = true,
-    String? currentUrl,
-  }) async {
-    final cid = _activeConversationId;
-    if (cid == null) return;
+  List<WorkToolEvent> _upsertEvent(
+    List<WorkToolEvent> events,
+    WorkToolEvent next,
+  ) {
+    final index = events.indexWhere((event) => event.id == next.id);
+    if (index == -1) return [...events, next];
+    final updated = List<WorkToolEvent>.from(events);
+    updated[index] = next;
+    return updated;
+  }
 
-    final feedbackPrompt = summary.isNotEmpty
-        ? 'User completed browser takeover with notes: "$summary". Current URL: ${currentUrl ?? "unchanged"}. Continue task.'
-        : 'User completed browser takeover. Current URL: ${currentUrl ?? "unchanged"}. Continue task.';
+  void _finishWithError(String turnId, String error) {
+    final turn = _turnById(turnId);
+    if (turn == null) return;
+    _phase = WorkSessionPhase.error;
+    _currentThinking = null;
+    final duration = DateTime.now().difference(turn.startedAt).inSeconds;
+    _updateTurn(
+      turn.copyWith(
+        status: 'error',
+        error: error,
+        durationSeconds: duration < 1 ? 1 : duration,
+      ),
+    );
+    _flushTurnSave();
+    unawaited(
+      _persistence.updateWorkSession(
+        conversationId: turn.conversationId,
+        phase: 'error',
+        endedAt: DateTime.now(),
+      ),
+    );
+    notifyListeners();
+  }
 
-    await startWorkTask(cid, feedbackPrompt);
+  WorkTurn? _turnById(String id) {
+    for (final turn in _turns) {
+      if (turn.id == id) return turn;
+    }
+    return null;
+  }
+
+  void _updateTurn(WorkTurn next) {
+    final index = _turns.indexWhere((turn) => turn.id == next.id);
+    if (index == -1) return;
+    _turns[index] = next;
+  }
+
+  void _queueSave() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 350), () {
+      final turn = currentTurn;
+      if (turn != null) unawaited(_persistence.saveWorkTurn(turn));
+    });
+  }
+
+  void _flushTurnSave() {
+    _saveDebounce?.cancel();
+    _saveDebounce = null;
+    final turn = currentTurn;
+    if (turn != null) unawaited(_persistence.saveWorkTurn(turn));
+  }
+
+  Future<void> _signScreenshot(String path) async {
+    if (_signedScreenshotUrls.containsKey(path)) return;
+    final url = await _persistence.createScreenshotUrl(path);
+    if (url == null || url.isEmpty) return;
+    _signedScreenshotUrls[path] = url;
+    notifyListeners();
   }
 
   Future<void> cancelWorkTask() async {
@@ -442,6 +575,18 @@ class WorkSessionProvider extends ChangeNotifier {
     }
     await _agentSubscription?.cancel();
     _agentSubscription = null;
+
+    final turn = currentTurn;
+    if (turn != null && turn.status == 'running') {
+      _updateTurn(
+        turn.copyWith(
+          status: 'stopped',
+          error: 'Stopped by you.',
+          pendingToolCallId: '',
+        ),
+      );
+      _flushTurnSave();
+    }
     _phase = WorkSessionPhase.idle;
     _currentThinking = null;
     notifyListeners();
@@ -449,6 +594,7 @@ class WorkSessionProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _saveDebounce?.cancel();
     _agentSubscription?.cancel();
     _cancelToken?.cancel();
     super.dispose();

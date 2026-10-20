@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
 import '../../models/work_tool_event.dart';
+import '../../providers/work_session_provider.dart';
 
 /// Browser tool view matching Manus reference:
 /// - Top row with centered underlined URL (about 11.5 dp, #535350) + hairline divider.
@@ -22,8 +25,8 @@ class _BrowserToolViewState extends State<BrowserToolView> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final url =
         widget.event.browserUrl ??
-        (widget.event.arguments['url']?.toString()) ??
-        'https://www.google.com';
+        widget.event.arguments['url']?.toString() ??
+        '';
 
     return Column(
       children: [
@@ -34,7 +37,7 @@ class _BrowserToolViewState extends State<BrowserToolView> {
           color: isDark ? const Color(0xFF1E1E20) : Colors.white,
           alignment: Alignment.center,
           child: Text(
-            url,
+            url.isEmpty ? 'No page loaded' : url,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -68,7 +71,8 @@ class _BrowserToolViewState extends State<BrowserToolView> {
   }
 
   Widget _buildViewportContent(bool isDark) {
-    final screenshot = widget.event.screenshotUrl;
+    final workSession = context.watch<WorkSessionProvider>();
+    final screenshot = workSession.screenshotUrlFor(widget.event);
     if (screenshot != null && screenshot.isNotEmpty) {
       if (screenshot.startsWith('http')) {
         return Image.network(
@@ -97,7 +101,7 @@ class _BrowserToolViewState extends State<BrowserToolView> {
   Widget _buildTextFallback(bool isDark) {
     final content = widget.event.result.isNotEmpty
         ? widget.event.result
-        : 'Browser navigated to ${widget.event.browserUrl ?? widget.event.arguments['url'] ?? 'https://www.google.com'}';
+        : 'No page text was captured for this step.';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(18),

@@ -1,280 +1,293 @@
 import 'dart:async';
+
 import 'package:dio/dio.dart' show CancelToken;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:Kelivo/features/work/models/work_plan.dart';
+import 'package:Kelivo/core/services/workspace/work_event_persistence_service.dart';
 import 'package:Kelivo/features/work/models/work_task_result.dart';
 import 'package:Kelivo/features/work/models/work_tool_event.dart';
+import 'package:Kelivo/features/work/models/work_turn.dart';
 import 'package:Kelivo/features/work/providers/work_session_provider.dart';
 import 'package:Kelivo/features/work/services/manus_agent_loop_service.dart';
 
-class MockManusAgentLoopService extends ManusAgentLoopService {
-  MockManusAgentLoopService({this.eventsToEmit = const []});
+class _FakePersistence extends WorkEventPersistenceService {
+  const _FakePersistence();
 
-  final List<ManusAgentEvent> eventsToEmit;
+  @override
+  Future<List<WorkTurn>> fetchWorkTurns(String conversationId) async =>
+      const [];
+
+  @override
+  Future<void> saveWorkTurn(WorkTurn turn) async {}
+
+  @override
+  Future<void> updateWorkSession({
+    required String conversationId,
+    String? workspaceId,
+    required String phase,
+    DateTime? startedAt,
+    DateTime? endedAt,
+  }) async {}
+
+  @override
+  Future<String?> createScreenshotUrl(String path) async =>
+      'https://signed.example/$path';
+}
+
+class _ScriptedAgent extends ManusAgentLoopService {
+  _ScriptedAgent(this.script);
+
+  final Stream<ManusAgentEvent> Function(String request) script;
+  final List<String?> pendingToolCallIds = [];
 
   @override
   Stream<ManusAgentEvent> runAgentLoop({
     required String conversationId,
     required String userRequest,
-    WorkPlan? initialPlan,
-    int maxIterations = 25,
+    int maxIterations = ManusAgentLoopService.defaultMaxIterations,
     CancelToken? cancelToken,
     List<Map<String, dynamic>>? existingMessages,
     String? pendingToolCallId,
-  }) async* {
-    for (final event in eventsToEmit) {
-      yield event;
-    }
+  }) {
+    pendingToolCallIds.add(pendingToolCallId);
+    return script(userRequest);
   }
 }
 
+WorkToolEvent _browserEvent({
+  String id = 'call_1',
+  String? screenshotPath,
+  String? screenshotUrl,
+}) {
+  return WorkToolEvent(
+    id: id,
+    stepId: 'step_1',
+    toolName: 'browser_navigate',
+    toolCategory: 'browser',
+    brief: 'فتح الصفحة',
+    arguments: const {'url': 'https://example.com'},
+    browserUrl: 'https://example.com',
+    screenshotPath: screenshotPath,
+    screenshotUrl: screenshotUrl,
+    status: 'completed',
+    timestamp: DateTime.now(),
+  );
+}
+
 void main() {
-  group('WorkSessionPhase State Machine & Card Visibility Tests', () {
-    late WorkSessionProvider provider;
-
-    setUp(() {
-      provider = WorkSessionProvider();
-    });
-
-    test('Initial phase is idle and card should not be visible', () {
+  group('WorkSessionProvider turns', () {
+    test('initial state is idle with no turns', () {
+      final provider = WorkSessionProvider(
+        agentService: _ScriptedAgent((_) => const Stream.empty()),
+        persistenceService: const _FakePersistence(),
+      );
       expect(provider.phase, WorkSessionPhase.idle);
-      expect(provider.isBusy, isFalse);
+      expect(provider.turns, isEmpty);
       expect(provider.isAgentRunning, isFalse);
-      expect(provider.showThinking, isFalse);
     });
 
     test(
-      'Phase transitions to running when task starts (Card Visible)',
+      'a completed task keeps one turn with real events and answer',
       () async {
-        final taskFuture = provider.startWorkTask(
-          'conv_123',
-          'افتح المتصفح الخاص بك على Google Chrome',
+        final event = _browserEvent(
+          screenshotPath: 'user/conv/call_1.png',
+          screenshotUrl: 'data:image/png;base64,AAAA',
         );
-        expect(provider.phase, WorkSessionPhase.running);
-        expect(provider.isBusy, isTrue);
-        expect(provider.isAgentRunning, isTrue);
-        await provider.cancelWorkTask();
-        await taskFuture;
-      },
-    );
-
-    test(
-      'showThinking rule: true when running and no tool is calling',
-      () async {
-        final taskFuture = provider.startWorkTask('conv_123', 'test task');
-        expect(provider.phase, WorkSessionPhase.running);
-        expect(provider.showThinking, isTrue);
-        await provider.cancelWorkTask();
-        await taskFuture;
-      },
-    );
-
-    test(
-      'Phase transitions to idle when task is cancelled (Card Disappears)',
-      () async {
-        final taskFuture = provider.startWorkTask('conv_123', 'test task');
-        expect(provider.phase, WorkSessionPhase.running);
-
-        await provider.cancelWorkTask();
-        expect(provider.phase, WorkSessionPhase.idle);
-        expect(provider.isBusy, isFalse);
-        await taskFuture;
-      },
-    );
-  });
-
-  group('Timeline Scrubber & Computer Sheet Navigation Tests', () {
-    test(
-      'Timeline events update live, scrubbing and jump to live behave correctly',
-      () async {
-        final event1 = WorkToolEvent(
-          id: 'tool_1',
-          stepId: 'step_1',
-          toolName: 'browser_navigate',
-          toolCategory: 'browser',
-          brief: 'فتح صفحة Google في المتصفح',
-          arguments: const {'url': 'https://www.google.com'},
-          screenshotUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==',
-          status: 'completed',
-          timestamp: DateTime.now(),
-        );
-
-        final event2 = WorkToolEvent(
-          id: 'tool_2',
-          stepId: 'step_2',
-          toolName: 'browser_view',
-          toolCategory: 'browser',
-          brief: 'التقاط لقطة شاشة للصفحة',
-          screenshotUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA',
-          status: 'completed',
-          timestamp: DateTime.now(),
-        );
-
-        final mockAgent = MockManusAgentLoopService(
-          eventsToEmit: [
-            ManusToolStartedEvent(event1),
-            ManusToolFinishedEvent(event1),
-            ManusToolStartedEvent(event2),
-            ManusToolFinishedEvent(event2),
-          ],
-        );
-
-        final provider = WorkSessionProvider(agentService: mockAgent);
-
-        // Initially empty
-        expect(provider.timelineEvents.isEmpty, isTrue);
-        expect(provider.isLive, isTrue);
-
-        await provider.startWorkTask('conv_test', 'test task');
-        await Future.delayed(const Duration(milliseconds: 50));
-
-        expect(provider.timelineEvents.length, 2);
-        expect(provider.currentEvent?.id, 'tool_2');
-
-        // Scrub to first event
-        provider.scrubTo(0);
-        expect(provider.scrubbedIndex, 0);
-        expect(provider.isLive, isFalse);
-        expect(provider.currentEvent?.id, 'tool_1');
-
-        // Jump to live
-        provider.jumpToLive();
-        expect(provider.isLive, isTrue);
-        expect(provider.currentEvent?.id, 'tool_2');
-
-        // Computer open / close
-        provider.openComputer(eventIndex: 0);
-        expect(provider.isComputerOpen, isTrue);
-        expect(provider.scrubbedIndex, 0);
-
-        provider.closeComputer();
-        expect(provider.isComputerOpen, isFalse);
-      },
-    );
-  });
-
-  group('End-to-End Acceptance Test: Arabic Browser Navigation Task', () {
-    test(
-      'Executes Arabic task: notification, browser tool with screenshot, and completion',
-      () async {
-        final toolEvent = WorkToolEvent(
-          id: 'call_google_nav',
-          stepId: 'step_1',
-          toolName: 'browser_navigate',
-          toolCategory: 'browser',
-          brief: 'فتح صفحة Google في المتصفح',
-          arguments: const {'url': 'https://www.google.com'},
-          browserUrl: 'https://www.google.com',
-          screenshotUrl:
-              'https://image.thum.io/get/width/1280/crop/800/https://www.google.com',
-          status: 'completed',
-          timestamp: DateTime.now(),
-        );
-
-        final deliverable = WorkTaskResult(
-          summary: 'تم فتح متصفح Google Chrome بنجاح وعرض الصفحة الرئيسية.',
-          attachments: const [],
-          completedAt: DateTime.now(),
-        );
-
-        final mockAgent = MockManusAgentLoopService(
-          eventsToEmit: [
-            const ManusMessageNotifyEvent(
-              'سأقوم الآن بفتح متصفح Google Chrome والانتقال إلى الصفحة الرئيسية.',
+        final agent = _ScriptedAgent(
+          (_) => Stream.fromIterable([
+            const ManusMessageNotifyEvent('سأفتح الصفحة'),
+            ManusToolStartedEvent(event),
+            ManusToolFinishedEvent(event),
+            ManusTaskCompletedEvent(
+              WorkTaskResult(
+                summary: 'تم فتح الصفحة.',
+                completedAt: DateTime.now(),
+              ),
             ),
-            ManusToolStartedEvent(toolEvent),
-            ManusToolFinishedEvent(toolEvent),
-            ManusTaskCompletedEvent(deliverable),
-          ],
+          ]),
+        );
+        final provider = WorkSessionProvider(
+          agentService: agent,
+          persistenceService: const _FakePersistence(),
         );
 
-        final provider = WorkSessionProvider(agentService: mockAgent);
+        await provider.startWorkTask('conv_1', 'افتح example.com');
+        await Future<void>.delayed(const Duration(milliseconds: 30));
 
-        expect(provider.phase, WorkSessionPhase.idle);
-        expect(provider.isBusy, isFalse);
-
-        // 1. User sends Arabic task
-        await provider.startWorkTask(
-          'conv_arabic',
-          'افتح المتصفح الخاص بك على Google Chrome',
-        );
-        await Future.delayed(const Duration(milliseconds: 50));
-
-        // 2. Task finishes via ManusTaskCompletedEvent
         expect(provider.phase, WorkSessionPhase.completed);
-        expect(provider.isBusy, isFalse);
-        expect(provider.taskResult, isNotNull);
+        expect(provider.turns, hasLength(1));
+        final turn = provider.currentTurn!;
+        expect(turn.prompt, 'افتح example.com');
+        expect(turn.introMessage, 'سأفتح الصفحة');
+        expect(turn.events, hasLength(1));
+        expect(turn.events.single.browserUrl, 'https://example.com');
+        expect(turn.finalAnswer, 'تم فتح الصفحة.');
+        expect(turn.durationSeconds, greaterThanOrEqualTo(1));
+        expect(turn.status, 'completed');
         expect(
-          provider.taskResult!.summary,
-          contains('تم فتح متصفح Google Chrome بنجاح'),
+          provider.screenshotUrlFor(turn.events.single),
+          'data:image/png;base64,AAAA',
         );
-
-        // 3. Timeline recorded tool event with Arabic brief and real screenshot URL
-        expect(provider.timelineEvents.length, 1);
-        final recordedTool = provider.timelineEvents.first;
-        expect(recordedTool.toolName, 'browser_navigate');
-        expect(recordedTool.brief, 'فتح صفحة Google في المتصفح');
-        expect(recordedTool.screenshotUrl, isNotNull);
-        expect(recordedTool.browserUrl, 'https://www.google.com');
-
-        // 4. Elapsed worked duration is calculated
-        expect(provider.workedDurationSeconds >= 0, isTrue);
-
-        // 5. Card visibility rule: Phase is completed, so isBusy/isAgentRunning is false
-        expect(provider.isAgentRunning, isFalse);
       },
     );
 
     test(
-      'Executes question phrasing: "هل يمكنك فتح المتصفح؟" with tools and not plain chatbot answer',
+      'a second prompt appends a turn and never replaces the first',
       () async {
-        final toolEvent = WorkToolEvent(
-          id: 'call_browser_question',
-          stepId: 'step_1',
-          toolName: 'browser_navigate',
-          toolCategory: 'browser',
-          brief: 'فتح صفحة Google في متصفح Chrome',
-          arguments: const {'url': 'https://www.google.com'},
-          browserUrl: 'https://www.google.com',
-          screenshotUrl:
-              'https://image.thum.io/get/width/1280/crop/800/https://www.google.com',
-          status: 'completed',
-          timestamp: DateTime.now(),
-        );
-
-        final deliverable = WorkTaskResult(
-          summary: 'نعم، تم فتح المتصفح بنجاح والانتقال إلى الصفحة المطلوبة.',
-          attachments: const [],
-          completedAt: DateTime.now(),
-        );
-
-        final mockAgent = MockManusAgentLoopService(
-          eventsToEmit: [
-            const ManusMessageNotifyEvent(
-              'سأقوم بفتح المتصفح وتنفيذ طلبك على الفور.',
+        var call = 0;
+        final agent = _ScriptedAgent((_) {
+          call++;
+          return Stream.fromIterable([
+            ManusTaskCompletedEvent(
+              WorkTaskResult(
+                summary: 'answer $call',
+                completedAt: DateTime.now(),
+              ),
             ),
-            ManusToolStartedEvent(toolEvent),
-            ManusToolFinishedEvent(toolEvent),
-            ManusTaskCompletedEvent(deliverable),
-          ],
+          ]);
+        });
+        final provider = WorkSessionProvider(
+          agentService: agent,
+          persistenceService: const _FakePersistence(),
         );
 
-        final provider = WorkSessionProvider(agentService: mockAgent);
+        await provider.startWorkTask('conv_1', 'first');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await provider.startWorkTask('conv_1', 'second');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        // User asks if assistant can open the browser
-        await provider.startWorkTask('conv_q', 'هل يمكنك فتح المتصفح؟');
-        await Future.delayed(const Duration(milliseconds: 50));
-
-        // Must run tools, not chatbot simulation text
-        expect(provider.phase, WorkSessionPhase.completed);
-        expect(provider.timelineEvents.length, 1);
-        expect(provider.timelineEvents.first.toolName, 'browser_navigate');
-        expect(
-          provider.timelineEvents.first.browserUrl,
-          'https://www.google.com',
-        );
-        expect(provider.taskResult?.summary, contains('تم فتح المتصفح'));
+        expect(provider.turns, hasLength(2));
+        expect(provider.turns.first.prompt, 'first');
+        expect(provider.turns.first.finalAnswer, 'answer 1');
+        expect(provider.turns.last.prompt, 'second');
+        expect(provider.turns.last.finalAnswer, 'answer 2');
       },
     );
+
+    test(
+      'waiting persists the question and resumes with the tool call id',
+      () async {
+        final agent = _ScriptedAgent((request) {
+          if (request == 'yes') {
+            return Stream.fromIterable([
+              ManusTaskCompletedEvent(
+                WorkTaskResult(summary: 'done', completedAt: DateTime.now()),
+              ),
+            ]);
+          }
+          return Stream.fromIterable([
+            const ManusMessageAskEvent('Which account?', 'ask_1'),
+          ]);
+        });
+        final provider = WorkSessionProvider(
+          agentService: agent,
+          persistenceService: const _FakePersistence(),
+        );
+
+        await provider.startWorkTask('conv_1', 'sign in');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(provider.phase, WorkSessionPhase.waiting);
+        expect(provider.currentTurn!.question, 'Which account?');
+        expect(provider.pendingToolCallId, 'ask_1');
+
+        await provider.resumeWorkTaskWithUserAnswer('yes');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(agent.pendingToolCallIds.last, 'ask_1');
+        expect(provider.turns, hasLength(1));
+        expect(provider.turns.single.status, 'completed');
+        expect(provider.turns.single.finalAnswer, 'done');
+      },
+    );
+
+    test(
+      'a stream that ends without deliver_result becomes an error',
+      () async {
+        final agent = _ScriptedAgent(
+          (_) => Stream.fromIterable([
+            ManusToolStartedEvent(_browserEvent()),
+            ManusToolFinishedEvent(_browserEvent()),
+          ]),
+        );
+        final provider = WorkSessionProvider(
+          agentService: agent,
+          persistenceService: const _FakePersistence(),
+        );
+
+        await provider.startWorkTask('conv_1', 'do it');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(provider.phase, WorkSessionPhase.error);
+        expect(provider.currentTurn!.status, 'error');
+        expect(provider.errorMessage, contains('without a final result'));
+      },
+    );
+
+    test('cancel marks the turn stopped and leaves idle phase', () async {
+      final controller = StreamController<ManusAgentEvent>();
+      final agent = _ScriptedAgent((_) => controller.stream);
+      final provider = WorkSessionProvider(
+        agentService: agent,
+        persistenceService: const _FakePersistence(),
+      );
+
+      await provider.startWorkTask('conv_1', 'long task');
+      await provider.cancelWorkTask();
+
+      expect(provider.phase, WorkSessionPhase.idle);
+      expect(provider.currentTurn!.status, 'stopped');
+      expect(provider.currentTurn!.error, 'Stopped by you.');
+      await controller.close();
+    });
+
+    test('signed screenshot URLs are resolved for persisted paths', () async {
+      final event = _browserEvent(
+        screenshotPath: 'user/conv/call_1.png',
+        screenshotUrl: null,
+      );
+      final agent = _ScriptedAgent(
+        (_) => Stream.fromIterable([
+          ManusToolStartedEvent(event),
+          ManusToolFinishedEvent(event),
+        ]),
+      );
+      final provider = WorkSessionProvider(
+        agentService: agent,
+        persistenceService: const _FakePersistence(),
+      );
+
+      await provider.startWorkTask('conv_1', 'look');
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      expect(
+        provider.screenshotUrlFor(provider.currentTurn!.events.single),
+        'https://signed.example/user/conv/call_1.png',
+      );
+    });
+
+    test('computer opens on the selected turn and event', () async {
+      final event = _browserEvent();
+      final agent = _ScriptedAgent(
+        (_) => Stream.fromIterable([
+          ManusToolStartedEvent(event),
+          ManusToolFinishedEvent(event),
+        ]),
+      );
+      final provider = WorkSessionProvider(
+        agentService: agent,
+        persistenceService: const _FakePersistence(),
+      );
+      await provider.startWorkTask('conv_1', 'look');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final turn = provider.currentTurn!;
+      provider.openComputer(turnId: turn.id, eventId: event.id);
+      expect(provider.isComputerOpen, isTrue);
+      expect(provider.computerTurn!.id, turn.id);
+      expect(provider.computerEvent!.id, event.id);
+
+      provider.closeComputer();
+      expect(provider.isComputerOpen, isFalse);
+    });
   });
 }

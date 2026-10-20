@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:Kelivo/core/services/workspace/work_event_persistence_service.dart';
-import 'package:Kelivo/features/work/models/work_plan.dart';
 import 'package:Kelivo/features/work/models/work_task_result.dart';
 import 'package:Kelivo/features/work/models/work_tool_event.dart';
+import 'package:Kelivo/features/work/models/work_turn.dart';
 import 'package:Kelivo/features/work/providers/work_session_provider.dart';
 import 'package:Kelivo/features/work/services/manus_agent_loop_service.dart';
 import 'package:Kelivo/features/work/widgets/work_computer_tray.dart';
@@ -30,14 +30,13 @@ class MockWorkEventPersistenceService extends WorkEventPersistenceService {
   }
 
   @override
-  Future<void> saveToolEvent(
-    String conversationId,
-    WorkToolEvent event,
-  ) async {}
+  Future<List<WorkTurn>> fetchWorkTurns(String conversationId) async => [];
 
   @override
-  Future<List<WorkToolEvent>> fetchToolEvents(String conversationId) async =>
-      [];
+  Future<void> saveWorkTurn(WorkTurn turn) async {}
+
+  @override
+  Future<String?> createScreenshotUrl(String path) async => null;
 }
 
 class MockManusAgentLoopService extends ManusAgentLoopService {
@@ -51,11 +50,15 @@ class MockManusAgentLoopService extends ManusAgentLoopService {
   final Completer<void> completer = Completer<void>();
 
   @override
+  Future<Map<String, dynamic>> checkComputerHealth() async => {
+    'status': 'connected',
+  };
+
+  @override
   Stream<ManusAgentEvent> runAgentLoop({
     required String conversationId,
     required String userRequest,
-    WorkPlan? initialPlan,
-    int maxIterations = 25,
+    int maxIterations = ManusAgentLoopService.defaultMaxIterations,
     CancelToken? cancelToken,
     List<Map<String, dynamic>>? existingMessages,
     String? pendingToolCallId,

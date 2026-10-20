@@ -1,9 +1,52 @@
 import 'dart:async';
+import 'package:dio/dio.dart' show CancelToken;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:Kelivo/core/models/conversation.dart';
+import 'package:Kelivo/core/services/workspace/work_event_persistence_service.dart';
+import 'package:Kelivo/features/work/models/work_turn.dart';
 import 'package:Kelivo/features/work/providers/work_session_provider.dart';
 import 'package:Kelivo/features/work/services/manus_agent_loop_service.dart';
-import 'package:Kelivo/core/services/workspace/daytona_workspace_runtime.dart';
+
+class _IsolatedPersistence extends WorkEventPersistenceService {
+  const _IsolatedPersistence();
+
+  @override
+  Future<List<WorkTurn>> fetchWorkTurns(String conversationId) async => [];
+
+  @override
+  Future<void> saveWorkTurn(WorkTurn turn) async {}
+
+  @override
+  Future<void> updateWorkSession({
+    required String conversationId,
+    String? workspaceId,
+    required String phase,
+    DateTime? startedAt,
+    DateTime? endedAt,
+  }) async {}
+
+  @override
+  Future<String?> createScreenshotUrl(String path) async => null;
+}
+
+class _FailingAgent extends ManusAgentLoopService {
+  @override
+  Future<Map<String, dynamic>> checkComputerHealth() async => {
+    'status': 'disconnected',
+  };
+
+  @override
+  Stream<ManusAgentEvent> runAgentLoop({
+    required String conversationId,
+    required String userRequest,
+    int maxIterations = ManusAgentLoopService.defaultMaxIterations,
+    CancelToken? cancelToken,
+    List<Map<String, dynamic>>? existingMessages,
+    String? pendingToolCallId,
+  }) async* {
+    yield const ManusErrorEvent('Could not start the computer: offline');
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,45 +77,32 @@ void main() {
       expect(defaultConv.isWork, isFalse);
     });
 
-    test(
-      'WorkSessionProvider transitions through phases on startWorkTask',
-      () async {
-        final runtime = DaytonaWorkspaceRuntime();
-        final agentService = ManusAgentLoopService(runtime: runtime);
-        final provider = WorkSessionProvider(agentService: agentService);
+    test('WorkSessionProvider reports a real bootstrap failure', () async {
+      final agentService = _FailingAgent();
+      final provider = WorkSessionProvider(
+        agentService: agentService,
+        persistenceService: const _IsolatedPersistence(),
+      );
 
-        expect(provider.phase, equals(WorkSessionPhase.idle));
-        expect(provider.isWorkMode, isFalse);
+      expect(provider.phase, equals(WorkSessionPhase.idle));
+      expect(provider.isWorkMode, isFalse);
 
-        provider.setMode(AppMode.work);
-        expect(provider.isWorkMode, isTrue);
-        expect(provider.mode, equals(AppMode.work));
+      provider.setMode(AppMode.work);
+      expect(provider.isWorkMode, isTrue);
+      expect(provider.mode, equals(AppMode.work));
 
-        final completer = Completer<void>();
-        void listener() {
-          if (provider.phase == WorkSessionPhase.completed ||
-              provider.phase == WorkSessionPhase.error) {
-            if (!completer.isCompleted) completer.complete();
-          }
-        }
+      await provider.startWorkTask('w_conv_1', 'افتح المتصفح');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        provider.addListener(listener);
-
-        await provider.startWorkTask('w_conv_1', 'افتح المتصفح');
-        expect(provider.phase, equals(WorkSessionPhase.running));
-        expect(provider.isAgentRunning, isTrue);
-
-        await completer.future.timeout(const Duration(seconds: 5));
-        provider.removeListener(listener);
-
-        // In unit test environment without mock, agent loop fails honestly with real error
-        expect(provider.phase, equals(WorkSessionPhase.error));
-        expect(provider.errorMessage, isNotNull);
-      },
-    );
+      expect(provider.phase, equals(WorkSessionPhase.error));
+      expect(provider.errorMessage, contains('offline'));
+    });
 
     test('Mode switching isolates active state cleanly', () {
-      final provider = WorkSessionProvider();
+      final provider = WorkSessionProvider(
+        agentService: _FailingAgent(),
+        persistenceService: const _IsolatedPersistence(),
+      );
       expect(provider.isWorkMode, isFalse);
 
       provider.setMode(AppMode.work);

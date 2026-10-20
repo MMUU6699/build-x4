@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../icons/lucide_adapter.dart';
+import '../../../shared/widgets/ios_tile_button.dart';
 import '../../work/providers/work_session_provider.dart';
 
 class SuggestionItem {
@@ -116,7 +117,11 @@ class ChatEmptyStateSuggestions extends StatelessWidget {
 
     final workSession = context.watch<WorkSessionProvider?>();
     final isWorkMode = workSession?.isWorkMode ?? false;
-    final isDaytonaConnected = workSession?.isDaytonaConnected ?? true;
+    final needsSignIn =
+        isWorkMode && workSession != null && !workSession.isSignedInForWork;
+    final computerConnected = workSession?.isDaytonaConnected ?? false;
+    final computerChecking = workSession?.daytonaChecking ?? false;
+    final computerUnavailable = workSession?.daytonaUnavailable ?? false;
 
     if (isWorkMode) {
       return Center(
@@ -126,66 +131,128 @@ class ChatEmptyStateSuggestions extends StatelessWidget {
             right: 20,
             bottom: bottomContentPadding,
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'What can I do for you?',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontFamily: 'serif',
-                  fontWeight: FontWeight.w600,
-                  color: isDark
-                      ? const Color(0xFFDADADA)
-                      : const Color(0xFF34322D),
-                  letterSpacing: -0.5,
-                ),
-              ),
-              if (!isDaytonaConnected) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  needsSignIn
+                      ? 'Sign in to use Work'
+                      : 'What can I do for you?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontFamily: 'serif',
+                    fontWeight: FontWeight.w600,
                     color: isDark
-                        ? const Color(0xFF3A2B20)
-                        : const Color(0xFFFFF3E0),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
+                        ? const Color(0xFFDADADA)
+                        : const Color(0xFF34322D),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                if (needsSignIn) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Work runs a private cloud computer. Sign in with a real '
+                    'account so your sandbox, screenshots, and files stay '
+                    'yours.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.45,
                       color: isDark
-                          ? const Color(0xFF6B4520)
-                          : const Color(0xFFFFB74D),
+                          ? const Color(0xFFA0A0A0)
+                          : const Color(0xFF666664),
                     ),
                   ),
-                  child: Row(
+                  const SizedBox(height: 18),
+                  IosTileButton(
+                    label: 'Sign in',
+                    icon: Lucide.User,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    onTap: () {
+                      workSession.signInForWork();
+                    },
+                  ),
+                ] else if (computerConnected) ...[
+                  const SizedBox(height: 16),
+                  Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Lucide.TriangleAlert,
+                      const Icon(
+                        Lucide.CheckCircle,
                         size: 16,
-                        color: isDark
-                            ? const Color(0xFFFFB74D)
-                            : const Color(0xFFE65100),
+                        color: Color(0xFF10B981),
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Daytona Cloud Sandbox is disconnected',
+                        'Computer connected',
                         style: TextStyle(
                           fontSize: 13,
                           color: isDark
-                              ? const Color(0xFFFFCC80)
-                              : const Color(0xFFE65100),
+                              ? const Color(0xFF6EE7B7)
+                              : const Color(0xFF047857),
                         ),
                       ),
                     ],
                   ),
-                ),
+                ] else if (computerChecking) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Checking computer...',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark
+                          ? const Color(0xFFA0A0A0)
+                          : const Color(0xFF666664),
+                    ),
+                  ),
+                ] else if (computerUnavailable) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF3A2B20)
+                          : const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF6B4520)
+                            : const Color(0xFFFFB74D),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Lucide.TriangleAlert,
+                          size: 16,
+                          color: isDark
+                              ? const Color(0xFFFFB74D)
+                              : const Color(0xFFE65100),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Daytona Cloud Sandbox is disconnected',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark
+                                ? const Color(0xFFFFCC80)
+                                : const Color(0xFFE65100),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (footer != null) ...[const SizedBox(height: 24), footer!],
               ],
-              if (footer != null) ...[const SizedBox(height: 24), footer!],
-            ],
+            ),
           ),
         ),
       );

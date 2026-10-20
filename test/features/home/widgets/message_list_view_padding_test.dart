@@ -37,12 +37,12 @@ void main() {
       await tester.pumpAndSettle();
       final state = key.currentState!;
       final footer = find.byKey(const ValueKey('conversation-footer'));
-      expect(state.listController.numberOfItems, state.messages.length);
+      expect(state.listController.numberOfItems, state.messages.length + 1);
       expect(footer.hitTestable(), findsNothing);
 
       Future<void> revealTail() async {
         state.listController.jumpToItem(
-          index: state.messages.length - 1,
+          index: state.messages.length,
           scrollController: state.scrollController,
           alignment: 1,
         );
@@ -69,7 +69,7 @@ void main() {
           tester.getTopLeft(find.byKey(const ValueKey('new-tail'))).dy,
         ),
       );
-      expect(state.listController.numberOfItems, state.messages.length);
+      expect(state.listController.numberOfItems, state.messages.length + 1);
 
       state.scrollController.jumpTo(0);
       await tester.pumpAndSettle();
@@ -1363,14 +1363,16 @@ class _PrependingMessageListHarnessState
             processingFilesMessageId: processingFilesMessageId,
             removingSlotIds: removingSlotIds,
             hasMoreAfter: widget.hasMoreAfter,
-            footer: widget.showFooter
-                ? const Center(
-                    child: Text(
-                      'Conversation prompt',
-                      key: ValueKey('conversation-footer'),
+            trailingItems: widget.showFooter
+                ? const [
+                    Center(
+                      child: Text(
+                        'Conversation prompt',
+                        key: ValueKey('conversation-footer'),
+                      ),
                     ),
-                  )
-                : null,
+                  ]
+                : const [],
           ),
         ),
       ),

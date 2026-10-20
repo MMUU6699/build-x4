@@ -3,7 +3,7 @@ class WorkToolEvent {
   final String stepId;
   final String toolName;
   final String
-  toolCategory; // 'shell', 'file', 'browser', 'search', 'mcp', 'plan', 'message'
+  toolCategory; // 'shell', 'file', 'browser', 'search', 'message', 'tool'
   final String brief;
   final Map<String, dynamic> arguments;
   final String result;
@@ -11,6 +11,10 @@ class WorkToolEvent {
   final String? modifiedFileContent;
   final String? browserUrl;
   final String? screenshotUrl;
+
+  /// Storage object path (`{user}/{conversation}/{event}.png`). Persisted;
+  /// signed URLs expire and must not be stored as history.
+  final String? screenshotPath;
   final String status; // 'calling', 'running', 'completed', 'failed'
   final DateTime timestamp;
 
@@ -26,6 +30,7 @@ class WorkToolEvent {
     this.modifiedFileContent,
     this.browserUrl,
     this.screenshotUrl,
+    this.screenshotPath,
     this.status = 'completed',
     required this.timestamp,
   });
@@ -39,13 +44,6 @@ class WorkToolEvent {
   bool get isBrowser =>
       toolCategory == 'browser' || toolName.startsWith('browser_');
   bool get isSearch => toolCategory == 'search' || toolName.contains('search');
-  bool get isMcp => toolCategory == 'mcp' || toolName.startsWith('mcp_');
-  bool get isPlan =>
-      toolCategory == 'plan' ||
-      toolName == 'plan_report' ||
-      toolName == 'replan';
-  bool get isMessage =>
-      toolCategory == 'message' || toolName.startsWith('message_');
 
   WorkToolEvent copyWith({
     String? id,
@@ -59,6 +57,7 @@ class WorkToolEvent {
     String? modifiedFileContent,
     String? browserUrl,
     String? screenshotUrl,
+    String? screenshotPath,
     String? status,
     DateTime? timestamp,
   }) {
@@ -74,6 +73,7 @@ class WorkToolEvent {
       modifiedFileContent: modifiedFileContent ?? this.modifiedFileContent,
       browserUrl: browserUrl ?? this.browserUrl,
       screenshotUrl: screenshotUrl ?? this.screenshotUrl,
+      screenshotPath: screenshotPath ?? this.screenshotPath,
       status: status ?? this.status,
       timestamp: timestamp ?? this.timestamp,
     );
@@ -93,7 +93,7 @@ class WorkToolEvent {
       if (modifiedFileContent != null)
         'modified_file_content': modifiedFileContent,
       if (browserUrl != null) 'browser_url': browserUrl,
-      if (screenshotUrl != null) 'screenshot_url': screenshotUrl,
+      if (screenshotPath != null) 'screenshot_path': screenshotPath,
       'status': status,
       'created_at': timestamp.toIso8601String(),
     };
@@ -108,7 +108,7 @@ class WorkToolEvent {
       toolCategory:
           json['tool_category']?.toString() ??
           json['toolCategory']?.toString() ??
-          'mcp',
+          'tool',
       brief: json['brief']?.toString() ?? '',
       arguments: json['arguments'] is Map
           ? Map<String, dynamic>.from(json['arguments'] as Map)
@@ -125,6 +125,9 @@ class WorkToolEvent {
       screenshotUrl:
           json['screenshot_url']?.toString() ??
           json['screenshotUrl']?.toString(),
+      screenshotPath:
+          json['screenshot_path']?.toString() ??
+          json['screenshotPath']?.toString(),
       status: json['status']?.toString() ?? 'completed',
       timestamp: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()

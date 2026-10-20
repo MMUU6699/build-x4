@@ -1,6 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:Kelivo/features/work/services/manus_agent_loop_service.dart';
 import 'package:Kelivo/core/services/workspace/daytona_workspace_runtime.dart';
+import 'package:Kelivo/core/services/workspace/work_event_persistence_service.dart';
+
+class _NoopPersistence extends WorkEventPersistenceService {
+  const _NoopPersistence();
+
+  @override
+  Future<List<Map<String, dynamic>>> loadAgentHistory(
+    String conversationId,
+  ) async => [];
+
+  @override
+  Future<void> saveAgentHistory(
+    String conversationId,
+    List<Map<String, dynamic>> messages,
+  ) async {}
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -108,6 +124,7 @@ void main() {
         int turn = 0;
         final agent = ManusAgentLoopService(
           runtime: mockRuntime,
+          persistenceService: const _NoopPersistence(),
           chatInvoker: (body) async {
             turn++;
             if (turn == 1) {
@@ -249,6 +266,7 @@ void main() {
         final mockRuntime = _MockDaytonaRuntime();
         final agent = ManusAgentLoopService(
           runtime: mockRuntime,
+          persistenceService: const _NoopPersistence(),
           chatInvoker: (body) async {
             return {
               'choices': [

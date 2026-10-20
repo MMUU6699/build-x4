@@ -1,5 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:Kelivo/core/services/workspace/work_event_persistence_service.dart';
 import 'package:Kelivo/features/work/services/manus_agent_loop_service.dart';
+
+class _NoopPersistence extends WorkEventPersistenceService {
+  const _NoopPersistence();
+
+  @override
+  Future<List<Map<String, dynamic>>> loadAgentHistory(
+    String conversationId,
+  ) async => [];
+
+  @override
+  Future<void> saveAgentHistory(
+    String conversationId,
+    List<Map<String, dynamic>> messages,
+  ) async {}
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -51,7 +67,7 @@ void main() {
                     'type': 'function',
                     'function': {
                       'name': 'deliver_result',
-                      'arguments': '{"summary": "Task completed successfully"}',
+                      'arguments': '{"message": "Task completed successfully"}',
                     },
                   },
                 ],
@@ -61,6 +77,7 @@ void main() {
         };
 
         final agent = ManusAgentLoopService(
+          persistenceService: const _NoopPersistence(),
           chatInvoker: (payload) async {
             capturedRequests.add(payload);
             turn++;
@@ -140,7 +157,7 @@ void main() {
                     'type': 'function',
                     'function': {
                       'name': 'browser_click',
-                      'arguments': '{"element": "search_button"}',
+                      'arguments': '{"index": 2, "brief": "Click search"}',
                     },
                     'index': 1,
                   },
@@ -164,7 +181,7 @@ void main() {
                     'type': 'function',
                     'function': {
                       'name': 'deliver_result',
-                      'arguments': '{"summary": "All done"}',
+                      'arguments': '{"message": "All done"}',
                     },
                   },
                 ],
@@ -174,6 +191,7 @@ void main() {
         };
 
         final agent = ManusAgentLoopService(
+          persistenceService: const _NoopPersistence(),
           chatInvoker: (payload) async {
             capturedRequests.add(payload);
             turn++;
@@ -240,6 +258,7 @@ void main() {
         };
 
         final agent = ManusAgentLoopService(
+          persistenceService: const _NoopPersistence(),
           chatInvoker: (payload) async {
             capturedRequests.add(payload);
             return missingIdResponse;

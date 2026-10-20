@@ -25,7 +25,7 @@ class DaytonaPtySession implements PtySession {
     final command = utf8.decode(data);
     try {
       final res = await runtime.invokeDaytona(
-        action: 'shell',
+        action: 'exec_command',
         sandboxId: sandboxId,
         params: {'command': command},
       );
@@ -56,6 +56,8 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
   DaytonaWorkspaceRuntime({this.defaultSandboxId});
 
   String? defaultSandboxId;
+  String? currentConversationId;
+  String? currentEventId;
   final Map<String, bool> _cancelledRuns = <String, bool>{};
 
   @override
@@ -75,6 +77,9 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
     final body = <String, dynamic>{
       'action': action,
       'sandboxId': sandboxId ?? defaultSandboxId,
+      if (currentConversationId != null)
+        'conversationId': currentConversationId,
+      if (currentEventId != null) 'eventId': currentEventId,
       ...?params,
     };
 
@@ -130,7 +135,7 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
       }
 
       final res = await invokeDaytona(
-        action: 'shell',
+        action: 'exec_command',
         params: {
           'command': request.command,
           'cwd': request.cwd,
@@ -222,22 +227,16 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
 
   Future<String> editFile(
     String path, {
-    String? targetContent,
-    String? replacementContent,
-    String? content,
+    required String oldStr,
+    required String newStr,
     String? sandboxId,
   }) async {
     final res = await invokeDaytona(
       action: 'edit_file',
       sandboxId: sandboxId,
-      params: {
-        'path': path,
-        'targetContent': targetContent,
-        'replacementContent': replacementContent,
-        'content': content,
-      },
+      params: {'path': path, 'old_str': oldStr, 'new_str': newStr},
     );
-    return (res['newContent'] as String?) ?? '';
+    return (res['modifiedContent'] as String?) ?? '';
   }
 
   Future<List<dynamic>> listDir(String path, {String? sandboxId}) async {
@@ -384,13 +383,20 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
 
   Future<String?> captureScreenshot({String? url, String? sandboxId}) async {
     final res = await invokeDaytona(
-      action: 'browser_screenshot',
+      action: 'browser_view',
       sandboxId: sandboxId,
       params: {if (url != null) 'url': url},
     );
     final s = res['screenshot_url'] as String?;
     if (s != null && s.isNotEmpty) return s;
     return null;
+  }
+
+  Future<Map<String, dynamic>> browserGetText({String? sandboxId}) async {
+    return await invokeDaytona(
+      action: 'browser_get_text',
+      sandboxId: sandboxId,
+    );
   }
 
   Future<Map<String, dynamic>> checkHealth() async {
@@ -402,17 +408,17 @@ class DaytonaWorkspaceRuntime implements WorkspaceRuntime {
     }
   }
 
-  Future<String> createSandbox({
-    String language = 'typescript',
-    Map<String, dynamic>? envVars,
-  }) async {
+  Future<String> ensureSandbox() async {
     final res = await invokeDaytona(
-      action: 'create_sandbox',
-      params: {'language': language, 'envVars': envVars},
+      action: 'ensure_sandbox',
+      params: {'language': 'typescript'},
     );
-    final sId = res['sandboxId'] as String;
-    defaultSandboxId = sId;
-    return sId;
+    final sandboxId = res['sandboxId']?.toString() ?? '';
+    if (sandboxId.isEmpty) {
+      throw StateError('ensure_sandbox returned no sandboxId: $res');
+    }
+    defaultSandboxId = sandboxId;
+    return sandboxId;
   }
 
   Future<void> startSandbox(String sandboxId) async {

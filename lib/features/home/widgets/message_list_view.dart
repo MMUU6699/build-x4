@@ -115,7 +115,8 @@ class MessageListView extends StatefulWidget {
     required this.dividerPadding,
     this.topContentPadding = 8,
     this.bottomContentPadding = 16,
-    this.footer,
+    this.trailingItems = const <Widget>[],
+    this.trailingSignature = '',
     this.pinnedStreamingMessageId,
     this.isPinnedIndicatorActive = false,
     required this.processingFilesMessageId,
@@ -229,9 +230,13 @@ class MessageListView extends StatefulWidget {
   final OnSpeakMessage? onSpeakMessage;
   final List<String> suggestions;
 
-  /// A compact action that scrolls after the last message, outside its content.
-  /// Kept in the final row so indexed navigation still counts only messages.
-  final Widget? footer;
+  /// Widgets rendered after the last message as separate list items.
+  /// Work turns use this; indexed navigation still counts only messages.
+  final List<Widget> trailingItems;
+
+  /// Changes whenever a trailing item's content changes height, so the lazy
+  /// list re-measures it instead of keeping a stale extent.
+  final String trailingSignature;
   final OnSuggestionTap? onSuggestionTap;
   final OnRecoveredAskUserAnswer? onRecoveredAskUserAnswer;
   final void Function(String messageId, bool selected)? onToggleSelection;
@@ -296,15 +301,15 @@ class MessageListView extends StatefulWidget {
 }
 
 class _MessageListViewState extends State<MessageListView> {
-  static const _footerExtent = 48.0;
+  static const double _trailingItemEstimate = 160.0;
   static final _idleStreamingContent = AlwaysStoppedAnimation(
     StreamingContentData(content: '', totalTokens: 0),
   );
 
-  bool get _hasFooter => _showsFooter(widget);
+  bool get _hasTrailing => _showsTrailing(widget);
 
-  static bool _showsFooter(MessageListView view) =>
-      view.footer != null &&
+  static bool _showsTrailing(MessageListView view) =>
+      view.trailingItems.isNotEmpty &&
       !view.hasMoreAfter &&
       !view.isLoadingWindow &&
       !view.selecting;
@@ -605,12 +610,9 @@ class _MessageListViewState extends State<MessageListView> {
   /// small; it does not need to be exact, only the right order of magnitude.
   double _estimateItemExtent(int? index, double crossAxisExtent) {
     if (index == null) return 0;
-    if (_effectiveRenderModels.isEmpty && _hasFooter) return _footerExtent;
-    final footerExtent =
-        _hasFooter && index == _effectiveRenderModels.length - 1
-        ? _footerExtent
-        : 0;
-    return _estimateMessageExtent(index, crossAxisExtent) + footerExtent;
+    final messageCount = _effectiveRenderModels.length;
+    if (index >= messageCount) return _trailingItemEstimate;
+    return _estimateMessageExtent(index, crossAxisExtent);
   }
 
   double _estimateMessageExtent(int? index, double crossAxisExtent) {
@@ -1224,16 +1226,15 @@ class _MessageListViewState extends State<MessageListView> {
     }
 
     final newModels = _effectiveRenderModels;
-    if ((_hasFooter || _showsFooter(oldWidget)) &&
-        (oldModels.length != newModels.length ||
-            _hasFooter != _showsFooter(oldWidget))) {
-      for (final index in {
-        math.max(0, oldModels.length - 1),
-        math.max(0, newModels.length - 1),
-      }) {
-        if (index < controller.numberOfItems) {
-          controller.invalidateExtent(index);
-        }
+    if (oldWidget.trailingSignature != widget.trailingSignature ||
+        oldWidget.trailingItems.length != widget.trailingItems.length ||
+        _hasTrailing != _showsTrailing(oldWidget)) {
+      for (
+        var index = math.max(0, oldModels.length - 1);
+        index < controller.numberOfItems;
+        index++
+      ) {
+        controller.invalidateExtent(index);
       }
     }
     final metricInputsChanged =
@@ -1734,15 +1735,21 @@ class _MessageListViewState extends State<MessageListView> {
                 widget.bottomContentPadding +
                     (widget.isPinnedIndicatorActive ? 12 : 0),
               ),
-              itemCount: _effectiveRenderModels.isEmpty && _hasFooter
-                  ? 1
-                  : _effectiveRenderModels.length,
+              itemCount:
+                  _effectiveRenderModels.length +
+                  (_hasTrailing ? widget.trailingItems.length : 0),
               keyboardDismissBehavior: _keyboardDismissBehavior,
               itemBuilder: (context, index) {
-                if (_effectiveRenderModels.isEmpty && _hasFooter) {
-                  return widget.footer!;
+                final messageCount = _effectiveRenderModels.length;
+                if (index >= messageCount) {
+                  final trailingIndex = index - messageCount;
+                  if (trailingIndex < 0 ||
+                      trailingIndex >= widget.trailingItems.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return widget.trailingItems[trailingIndex];
                 }
-                if (index < 0 || index >= _effectiveRenderModels.length) {
+                if (index < 0) {
                   return const SizedBox.shrink();
                 }
                 return _buildMessageItem(
@@ -2152,8 +2159,6 @@ class _MessageListViewState extends State<MessageListView> {
             padding: widget.dividerPadding,
             child: _buildContextDivider(context),
           ),
-        if (_hasFooter && index == _effectiveRenderModels.length - 1)
-          widget.footer!,
       ],
     );
     final isSpotlight =

@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../models/work_tool_event.dart';
 import '../providers/work_session_provider.dart';
-import 'work_computer_modal_sheet.dart';
 
 /// Recessed computer card placed in layout directly above the ChatBox.
 /// Strictly follows official Manus mobile design:
@@ -137,7 +136,6 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
     return GestureDetector(
       onTap: () {
         workSession.openComputer();
-        WorkComputerModalSheet.show(context);
       },
       behavior: HitTestBehavior.opaque,
       child: Container(
@@ -250,17 +248,18 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
   // 3.2 Thumbnail content: Real screenshot or Dark Terminal Preview
   // ---------------------------------------------------------------------------
   Widget _buildThumbnailContent(bool isDark, WorkSessionProvider workSession) {
+    final events = workSession.currentTurn?.events ?? const <WorkToolEvent>[];
     // 0. If no events have run yet, show inactive computer thumbnail
-    if (workSession.timelineEvents.isEmpty &&
-        workSession.currentEvent == null) {
+    if (events.isEmpty) {
       return _buildInactiveThumbnail(isDark);
     }
 
-    // 1. Look for latest real screenshot in timeline events
+    // 1. Look for the latest real screenshot in this turn.
     String? latestScreenshot;
-    for (final ev in workSession.timelineEvents.reversed) {
-      if (ev.screenshotUrl != null && ev.screenshotUrl!.isNotEmpty) {
-        latestScreenshot = ev.screenshotUrl;
+    for (final ev in events.reversed) {
+      final url = workSession.screenshotUrlFor(ev);
+      if (url != null && url.isNotEmpty) {
+        latestScreenshot = url;
         break;
       }
     }
@@ -323,19 +322,14 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
   }
 
   Widget _buildTerminalPreview(WorkSessionProvider workSession) {
-    final lastEvent =
-        workSession.currentEvent ??
-        (workSession.timelineEvents.isNotEmpty
-            ? workSession.timelineEvents.last
-            : null);
+    final events = workSession.currentTurn?.events ?? const <WorkToolEvent>[];
+    final lastEvent = events.isEmpty ? null : events.last;
     final cmd =
         lastEvent?.arguments['command']?.toString() ??
-        (lastEvent != null
-            ? '${lastEvent.toolName} ${lastEvent.brief}'
-            : 'daytona sandbox ready');
+        (lastEvent != null ? lastEvent.toolName : '');
     final stdout = lastEvent != null && lastEvent.result.isNotEmpty
         ? lastEvent.result.trim()
-        : 'Process active';
+        : '';
 
     return Container(
       color: const Color(0xFF141416),

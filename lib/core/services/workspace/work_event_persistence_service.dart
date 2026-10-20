@@ -1,41 +1,9 @@
 import 'package:flutter/foundation.dart';
 import '../../config/supabase_config.dart';
-import '../../../features/work/models/work_tool_event.dart';
+import '../../../features/work/models/work_turn.dart';
 
 class WorkEventPersistenceService {
   const WorkEventPersistenceService();
-
-  Future<void> saveToolEvent(String conversationId, WorkToolEvent event) async {
-    if (SupabaseConfig.isUnconfigured) return;
-    try {
-      final client = SupabaseConfig.client;
-      final data = event.toJson();
-      data['conversation_id'] = conversationId;
-
-      await client.from('work_tool_events').upsert(data, onConflict: 'id');
-    } catch (e) {
-      debugPrint('Failed to save work tool event: $e');
-    }
-  }
-
-  Future<List<WorkToolEvent>> fetchToolEvents(String conversationId) async {
-    if (SupabaseConfig.isUnconfigured) return [];
-    try {
-      final client = SupabaseConfig.client;
-      final response = await client
-          .from('work_tool_events')
-          .select()
-          .eq('conversation_id', conversationId)
-          .order('created_at', ascending: true);
-
-      return (response as List<dynamic>).map((item) {
-        return WorkToolEvent.fromJson(Map<String, dynamic>.from(item as Map));
-      }).toList();
-    } catch (e) {
-      debugPrint('Failed to fetch work tool events: $e');
-      return [];
-    }
-  }
 
   Future<void> recordIntegrationStatus({
     required String provider,
@@ -89,6 +57,102 @@ class WorkEventPersistenceService {
     }
   }
 
+  Future<List<WorkTurn>> fetchWorkTurns(String conversationId) async {
+    if (SupabaseConfig.isUnconfigured) return [];
+    try {
+      final client = SupabaseConfig.client;
+      final user = client.auth.currentUser;
+      if (user == null) return [];
+      final rows = await client
+          .from('work_turns')
+          .select()
+          .eq('conversation_id', conversationId)
+          .eq('user_id', user.id)
+          .order('started_at', ascending: true);
+      return (rows as List<dynamic>)
+          .map(
+            (row) => WorkTurn.fromJson(Map<String, dynamic>.from(row as Map)),
+          )
+          .toList();
+    } catch (e) {
+      debugPrint('Failed to fetch work turns: $e');
+      return [];
+    }
+  }
+
+  Future<void> saveWorkTurn(WorkTurn turn) async {
+    if (SupabaseConfig.isUnconfigured) return;
+    try {
+      final client = SupabaseConfig.client;
+      final user = client.auth.currentUser;
+      if (user == null) return;
+      final data = turn.toJson();
+      data['user_id'] = user.id;
+      await client.from('work_turns').upsert(data, onConflict: 'id');
+    } catch (e) {
+      debugPrint('Failed to save work turn: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> loadAgentHistory(
+    String conversationId,
+  ) async {
+    if (SupabaseConfig.isUnconfigured) return [];
+    try {
+      final client = SupabaseConfig.client;
+      final user = client.auth.currentUser;
+      if (user == null) return [];
+      final row = await client
+          .from('work_agent_messages')
+          .select('messages')
+          .eq('conversation_id', conversationId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+      final raw = row?['messages'];
+      if (raw is List) {
+        return raw
+            .whereType<Map>()
+            .map((m) => Map<String, dynamic>.from(m))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('Failed to load agent history: $e');
+    }
+    return [];
+  }
+
+  Future<void> saveAgentHistory(
+    String conversationId,
+    List<Map<String, dynamic>> messages,
+  ) async {
+    if (SupabaseConfig.isUnconfigured) return;
+    try {
+      final client = SupabaseConfig.client;
+      final user = client.auth.currentUser;
+      if (user == null) return;
+      await client.from('work_agent_messages').upsert({
+        'conversation_id': conversationId,
+        'user_id': user.id,
+        'messages': messages,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'conversation_id');
+    } catch (e) {
+      debugPrint('Failed to save agent history: $e');
+    }
+  }
+
+  Future<String?> createScreenshotUrl(String path) async {
+    if (SupabaseConfig.isUnconfigured || path.isEmpty) return null;
+    try {
+      return await SupabaseConfig.client.storage
+          .from('workspace_screenshots')
+          .createSignedUrl(path, 3600);
+    } catch (e) {
+      debugPrint('Failed to sign screenshot path: $e');
+      return null;
+    }
+  }
+
   Future<void> updateWorkSession({
     required String conversationId,
     String? workspaceId,
@@ -123,34 +187,6 @@ class WorkEventPersistenceService {
           .upsert(payload, onConflict: 'conversation_id');
     } catch (e) {
       debugPrint('Failed to update work session: $e');
-    }
-  }
-
-  Future<String?> uploadScreenshot({
-    required String conversationId,
-    required String eventId,
-    required Uint8List bytes,
-  }) async {
-    if (SupabaseConfig.isUnconfigured) return null;
-    try {
-      final client = SupabaseConfig.client;
-      final user = client.auth.currentUser;
-      final userId = user?.id ?? 'guest';
-      final path = '$userId/$conversationId/$eventId.png';
-
-      await client.storage
-          .from('workspace_screenshots')
-          .uploadBinary(path, bytes);
-
-      // Create signed URL valid for 7 days
-      final signedUrl = await client.storage
-          .from('workspace_screenshots')
-          .createSignedUrl(path, 60 * 60 * 24 * 7);
-
-      return signedUrl;
-    } catch (e) {
-      debugPrint('Failed to upload screenshot to Supabase Storage: $e');
-      return null;
     }
   }
 }

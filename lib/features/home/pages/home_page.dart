@@ -54,7 +54,7 @@ import '../controllers/scroll_controller.dart' as scroll_ctrl;
 import 'home_mobile_layout.dart';
 import 'home_desktop_layout.dart';
 import '../../work/providers/work_session_provider.dart';
-import '../../work/widgets/work_step_group_widget.dart';
+import '../../work/widgets/work_turn_widget.dart';
 import '../../work/widgets/work_computer_modal_sheet.dart';
 import '../../work/widgets/work_computer_tray.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
@@ -637,6 +637,7 @@ class _HomePageState extends State<HomePage>
   bool _incomingShareChanged = false;
   bool _isComputerModalShowing = false;
   AppMode? _lastObservedMode;
+  WorkSessionPhase? _lastWorkPhase;
 
   void _onWorkSessionChanged() {
     if (!mounted) return;
@@ -647,6 +648,12 @@ class _HomePageState extends State<HomePage>
     } else {
       _lastObservedMode = workSession.mode;
     }
+    final phase = workSession.phase;
+    if (_lastWorkPhase == WorkSessionPhase.running &&
+        phase != WorkSessionPhase.running) {
+      _controller.scrollCtrl.stickToBottomAfterGeneration();
+    }
+    _lastWorkPhase = phase;
     if (workSession.isComputerOpen && !_isComputerModalShowing) {
       _isComputerModalShowing = true;
       WorkComputerModalSheet.show(context).then((_) {
@@ -1046,11 +1053,11 @@ class _HomePageState extends State<HomePage>
 
   Widget _buildMobileBody(BuildContext context, ColorScheme cs) {
     final workSession = context.watch<WorkSessionProvider>();
-    final double computerTrayHeight =
+    final double trayHeight =
         (workSession.isWorkMode && workSession.isAgentRunning) ? 52.0 : 0.0;
     final double keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     final bottomContentPadding =
-        _controller.inputBarHeight + computerTrayHeight + keyboardInset + 20.0;
+        _controller.inputBarHeight + trayHeight + keyboardInset + 20.0;
     final topContentPadding = _chatTopOverlayInset(context) + 8;
     final backgroundImageActive = _assistantBackgroundActive(context);
 
@@ -1245,11 +1252,11 @@ class _HomePageState extends State<HomePage>
 
   Widget _buildTabletBody(BuildContext context, ColorScheme cs) {
     final workSession = context.watch<WorkSessionProvider>();
-    final double computerTrayHeight =
+    final double trayHeight =
         (workSession.isWorkMode && workSession.isAgentRunning) ? 52.0 : 0.0;
     final double keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     final bottomContentPadding =
-        _controller.inputBarHeight + computerTrayHeight + keyboardInset + 20.0;
+        _controller.inputBarHeight + trayHeight + keyboardInset + 20.0;
     final topContentPadding = _chatTopOverlayInset(context) + 8;
     final backgroundImageActive = _assistantBackgroundActive(context);
 
@@ -1360,20 +1367,42 @@ class _HomePageState extends State<HomePage>
           )
         : null;
 
-    final effectiveFooter = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (workSession.isWorkMode) const WorkStepGroupWidget(),
-        if (promptButton != null) promptButton,
-      ],
-    );
+    final trailingItems = <Widget>[
+      if (workSession.isWorkMode)
+        for (final turn in workSession.turns)
+          WorkTurnWidget(key: ValueKey<String>(turn.id), turn: turn),
+      if (promptButton != null) promptButton,
+    ];
+    final trailingSignature = workSession.isWorkMode
+        ? workSession.turns
+              .map((turn) {
+                final events = turn.events
+                    .map(
+                      (event) =>
+                          '${event.id}:${event.status}:${event.brief.length}:'
+                          '${event.result.length}:'
+                          '${event.screenshotPath ?? ''}',
+                    )
+                    .join(',');
+                return '${turn.id}:${turn.status}:'
+                    '${turn.introMessage.length}:'
+                    '${turn.finalAnswer?.length ?? 0}:'
+                    '${turn.question?.length ?? 0}:$events';
+              })
+              .join('|')
+        : '';
 
     if (_controller.chatController.collapsedMessages.isEmpty) {
       return ChatEmptyStateSuggestions(
         topContentPadding: topContentPadding,
         bottomContentPadding: bottomContentPadding,
-        footer: effectiveFooter,
+        footer: trailingItems.isEmpty
+            ? null
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: trailingItems,
+              ),
         onSelectSuggestion: (prompt) => _controller.sendSuggestion(prompt),
       );
     }
@@ -1381,7 +1410,8 @@ class _HomePageState extends State<HomePage>
     final settings = context.watch<SettingsProvider>();
     final suggestionsEnabled = settings.isSuggestionGenerationEnabled;
     return MessageListView(
-      footer: effectiveFooter,
+      trailingItems: trailingItems,
+      trailingSignature: trailingSignature,
       processingFilesMessageId: _controller.processingFilesMessageId,
       scrollController: _scrollController,
       listController: _controller.scrollCtrl.messageListController,
@@ -1571,20 +1601,9 @@ class _HomePageState extends State<HomePage>
             debugPrint(
               '[WorkMode Route] Resuming waiting task with user response',
             );
-            unawaited(
-              workSession.resumeWorkTaskWithUserAnswer(
-                text.text,
-                chatController: _controller.chatController,
-              ),
-            );
+            unawaited(workSession.resumeWorkTaskWithUserAnswer(text.text));
           } else {
-            unawaited(
-              workSession.startWorkTask(
-                cid,
-                text.text,
-                chatController: _controller.chatController,
-              ),
-            );
+            unawaited(workSession.startWorkTask(cid, text.text));
           }
           if (PlatformUtils.isMobile) {
             _controller.dismissKeyboard();
@@ -1638,16 +1657,22 @@ class _HomePageState extends State<HomePage>
     BuildContext context, {
     required bool isTablet,
   }) {
-    final workSession = context.watch<WorkSessionProvider>();
-    final bool showTray =
-        workSession.isWorkMode && workSession.phase == WorkSessionPhase.running;
     final chatInput = _buildChatInputBar(context, isTablet: isTablet);
-    if (!showTray) return chatInput;
 
+    // The tray slot always exists so the ChatBox element is never re-parented:
+    // text, focus and IME state survive the tray appearing and disappearing.
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [const WorkComputerTray(), chatInput],
+      children: [
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.bottomCenter,
+          child: const WorkComputerTray(),
+        ),
+        chatInput,
+      ],
     );
   }
 
