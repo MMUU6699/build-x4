@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../../core/providers/user_provider.dart';
-import '../../../icons/lucide_adapter.dart';
-import '../../../shared/widgets/ios_tactile.dart';
-import '../../../shared/widgets/snackbar.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
+import 'package:provider/provider.dart';
+
+import '../../../core/services/auth/auth_service.dart';
+import '../../../icons/lucide_adapter.dart';
+import '../../../shared/widgets/ios_form_text_field.dart';
+import '../../../shared/widgets/ios_tactile.dart';
+import '../../../shared/widgets/section_card.dart';
+import '../../../shared/widgets/snackbar.dart';
+import '../../auth/pages/auth_page.dart';
 
 class AccountProfilePage extends StatefulWidget {
   const AccountProfilePage({super.key});
@@ -14,90 +18,158 @@ class AccountProfilePage extends StatefulWidget {
 }
 
 class _AccountProfilePageState extends State<AccountProfilePage> {
-  late final TextEditingController _nameController;
-  late final TextEditingController _emailController;
-  late final TextEditingController _bioController;
-  bool _isSaving = false;
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _currentPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
-  final List<String> _quickEmojis = [
-    '⚡',
-    '🚀',
-    '💻',
-    '🧠',
-    '🎨',
-    '🛠️',
-    '✨',
-    '🎯',
-    '🛡️',
-    '🔥',
-    '🌟',
-    '☕',
-  ];
+  bool _nameInitialized = false;
+  bool _savingName = false;
+  bool _changingPassword = false;
 
   @override
-  void initState() {
-    super.initState();
-    final user = context.read<UserProvider>();
-    _nameController = TextEditingController(text: user.name);
-    _emailController = TextEditingController(text: user.email);
-    _bioController = TextEditingController(text: user.roleOrBio);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_nameInitialized) return;
+    final auth = context.read<AuthService>();
+    if (auth.isSignedIn) {
+      _nameController.text = auth.displayName;
+      _emailController.text = auth.email;
+      _nameInitialized = true;
+    }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _bioController.dispose();
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleSave() async {
+  Future<void> _saveName() async {
+    final auth = context.read<AuthService>();
     final name = _nameController.text.trim();
-    final email = _emailController.text.trim();
-    final bio = _bioController.text.trim();
-
     if (name.isEmpty) {
       showAppSnackBar(
         context,
-        message: 'يرجى إدخال اسم المستخدم',
+        message: 'Display name cannot be empty.',
         type: NotificationType.warning,
       );
       return;
     }
-
-    setState(() => _isSaving = true);
-    final user = context.read<UserProvider>();
-    await user.setName(name);
-    await user.setEmail(email);
-    await user.setRoleOrBio(bio);
-    if (mounted) {
-      setState(() => _isSaving = false);
+    setState(() => _savingName = true);
+    try {
+      await auth.updateDisplayName(name);
+      if (!mounted) return;
       showAppSnackBar(
         context,
-        message: 'تم حفظ بيانات الملف الشخصي بنجاح',
+        message: 'Display name saved.',
         type: NotificationType.success,
       );
+    } catch (e) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        message: AuthService.friendlyError(e),
+        type: NotificationType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _savingName = false);
     }
+  }
+
+  Future<void> _changePassword() async {
+    final auth = context.read<AuthService>();
+    final current = _currentPasswordController.text;
+    final next = _newPasswordController.text;
+    final confirm = _confirmPasswordController.text;
+    if (current.isEmpty || next.isEmpty) {
+      showAppSnackBar(
+        context,
+        message: 'Enter your current and new password.',
+        type: NotificationType.warning,
+      );
+      return;
+    }
+    if (next.length < 8) {
+      showAppSnackBar(
+        context,
+        message: 'Use at least 8 characters for the new password.',
+        type: NotificationType.warning,
+      );
+      return;
+    }
+    if (next != confirm) {
+      showAppSnackBar(
+        context,
+        message: 'The new passwords do not match.',
+        type: NotificationType.warning,
+      );
+      return;
+    }
+    setState(() => _changingPassword = true);
+    try {
+      await auth.updatePassword(currentPassword: current, newPassword: next);
+      if (!mounted) return;
+      _currentPasswordController.clear();
+      _newPasswordController.clear();
+      _confirmPasswordController.clear();
+      showAppSnackBar(
+        context,
+        message: 'Password updated.',
+        type: NotificationType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        message: AuthService.friendlyError(e),
+        type: NotificationType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _changingPassword = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+          'Chat history stays in your account. You can sign in again later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final auth = context.read<AuthService>();
+    await auth.signOut();
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF0A0A0A) : const Color(0xFFF8F7F4);
-    final cardBg = isDark ? const Color(0xFF1E1E1D) : const Color(0xFFFFFFFF);
-    final borderColor = isDark
-        ? const Color(0xFF333330)
-        : const Color(0xFFE6E4DD);
-    final titleColor = isDark
-        ? const Color(0xFFEDEDEC)
-        : const Color(0xFF141413);
-    final subtitleColor = isDark
-        ? const Color(0xFF9E9D98)
-        : const Color(0xFF666664);
-    final user = context.watch<UserProvider>();
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final auth = context.watch<AuthService>();
 
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -108,306 +180,252 @@ class _AccountProfilePageState extends State<AccountProfilePage> {
           onTap: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          'الملف الشخصي',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: AppFontWeights.semibold,
-            color: titleColor,
-          ),
+          'Account',
+          style: TextStyle(fontSize: 17, fontWeight: AppFontWeights.semibold),
         ),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 540),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Avatar Header Card
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  decoration: BoxDecoration(
-                    color: cardBg,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: borderColor, width: 1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(
-                          alpha: isDark ? 0.3 : 0.04,
-                        ),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      // Avatar Circle
-                      Container(
-                        width: 84,
-                        height: 84,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isDark
-                              ? const Color(0xFF2C2C2A)
-                              : const Color(0xFFF0EFEA),
-                          border: Border.all(color: borderColor, width: 1.5),
-                        ),
-                        alignment: Alignment.center,
-                        child:
-                            user.avatarType == 'emoji' &&
-                                user.avatarValue != null
-                            ? Text(
-                                user.avatarValue!,
-                                style: const TextStyle(fontSize: 40),
-                              )
-                            : Icon(
-                                Lucide.User,
-                                size: 40,
-                                color: isDark
-                                    ? const Color(0xFFEDEDEC)
-                                    : const Color(0xFF141413),
-                              ),
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        user.name,
-                        style: TextStyle(
-                          fontSize: 19,
-                          fontWeight: FontWeight.w700,
-                          color: titleColor,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFF10B981,
-                          ).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text(
-                          'صلاحيات كاملة · Full Access',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF10B981),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      // Emoji Picker Row
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.center,
-                        children: [
-                          for (final emoji in _quickEmojis)
-                            InkWell(
-                              onTap: () => user.setAvatarEmoji(emoji),
-                              borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: user.avatarValue == emoji
-                                      ? (isDark
-                                            ? Colors.white.withValues(
-                                                alpha: 0.2,
-                                              )
-                                            : Colors.black.withValues(
-                                                alpha: 0.1,
-                                              ))
-                                      : Colors.transparent,
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 540),
+              child: !auth.isSignedIn
+                  ? _SignedOutCard(auth: auth)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SectionCard(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              children: [
+                                _Avatar(auth: auth),
+                                const SizedBox(height: 14),
+                                Text(
+                                  auth.displayName,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 20),
+                                const SizedBox(height: 4),
+                                Text(
+                                  auth.email.isEmpty ? 'Signed in' : auth.email,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-                          if (user.avatarType != null)
-                            InkWell(
-                              onTap: () => user.clearAvatar(),
-                              borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        SectionCard(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Profile',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Lucide.X,
-                                  size: 16,
-                                  color: subtitleColor,
+                                const SizedBox(height: 14),
+                                IosFormTextField(
+                                  controller: _nameController,
+                                  label: 'Display name',
+                                  hintText: 'Your name',
+                                  textCapitalization: TextCapitalization.words,
+                                  onSubmitted: (_) => _saveName(),
                                 ),
-                              ),
+                                const SizedBox(height: 14),
+                                IosFormTextField(
+                                  controller: _emailController,
+                                  label: 'Email',
+                                  enabled: false,
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton(
+                                  onPressed: _savingName ? null : _saveName,
+                                  child: _savingName
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Text('Save display name'),
+                                ),
+                              ],
                             ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                // Information Form Card
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: cardBg,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: borderColor, width: 1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(
-                          alpha: isDark ? 0.3 : 0.04,
-                        ),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'الاسم الكامل',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: subtitleColor,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _nameController,
-                        style: TextStyle(fontSize: 15.5, color: titleColor),
-                        decoration: InputDecoration(
-                          hintText: 'أدخل اسمك...',
-                          filled: true,
-                          fillColor: isDark
-                              ? const Color(0xFF2C2C2A).withValues(alpha: 0.5)
-                              : const Color(0xFFF0EFEA).withValues(alpha: 0.7),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        'المسمى الوظيفي / النبذة التعريفية',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: subtitleColor,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _bioController,
-                        style: TextStyle(fontSize: 15.5, color: titleColor),
-                        decoration: InputDecoration(
-                          hintText:
-                              'مثال: Principal Flutter UI/UX & Full-Stack Engineer',
-                          filled: true,
-                          fillColor: isDark
-                              ? const Color(0xFF2C2C2A).withValues(alpha: 0.5)
-                              : const Color(0xFFF0EFEA).withValues(alpha: 0.7),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        'البريد الإلكتروني',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: subtitleColor,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        style: TextStyle(fontSize: 15.5, color: titleColor),
-                        decoration: InputDecoration(
-                          hintText: 'name@example.com',
-                          filled: true,
-                          fillColor: isDark
-                              ? const Color(0xFF2C2C2A).withValues(alpha: 0.5)
-                              : const Color(0xFFF0EFEA).withValues(alpha: 0.7),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
+                        const SizedBox(height: 20),
+                        SectionCard(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Change password',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                IosFormTextField(
+                                  controller: _currentPasswordController,
+                                  label: 'Current password',
+                                  obscureText: true,
+                                  textInputAction: TextInputAction.next,
+                                ),
+                                const SizedBox(height: 14),
+                                IosFormTextField(
+                                  controller: _newPasswordController,
+                                  label: 'New password',
+                                  obscureText: true,
+                                  textInputAction: TextInputAction.next,
+                                ),
+                                const SizedBox(height: 14),
+                                IosFormTextField(
+                                  controller: _confirmPasswordController,
+                                  label: 'Confirm new password',
+                                  obscureText: true,
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: (_) => _changePassword(),
+                                ),
+                                const SizedBox(height: 16),
+                                OutlinedButton(
+                                  onPressed: _changingPassword
+                                      ? null
+                                      : _changePassword,
+                                  child: _changingPassword
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Text('Update password'),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Save Button
-                IosCardPress(
-                  onTap: _isSaving ? null : _handleSave,
-                  borderRadius: BorderRadius.circular(16),
-                  baseColor: isDark ? Colors.white : const Color(0xFF141413),
-                  child: Container(
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white : const Color(0xFF141413),
-                      borderRadius: BorderRadius.circular(16),
+                        const SizedBox(height: 24),
+                        OutlinedButton.icon(
+                          onPressed: _signOut,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: cs.error,
+                            side: BorderSide(
+                              color: cs.error.withValues(alpha: 0.35),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                          ),
+                          icon: const Icon(Lucide.Power, size: 18),
+                          label: const Text('Sign out'),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                     ),
-                    alignment: Alignment.center,
-                    child: _isSaving
-                        ? SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: isDark
-                                  ? const Color(0xFF0A0A0A)
-                                  : Colors.white,
-                            ),
-                          )
-                        : Text(
-                            'حفظ التغييرات',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? const Color(0xFF0A0A0A)
-                                  : Colors.white,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.auth});
+
+  final AuthService auth;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    if (auth.avatarUrl.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          auth.avatarUrl,
+          width: 84,
+          height: 84,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _initialAvatar(cs),
+        ),
+      );
+    }
+    return _initialAvatar(cs);
+  }
+
+  Widget _initialAvatar(ColorScheme cs) {
+    return Container(
+      width: 84,
+      height: 84,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: cs.primary.withValues(alpha: 0.12),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        auth.initials,
+        style: TextStyle(
+          fontSize: 30,
+          fontWeight: FontWeight.w700,
+          color: cs.primary,
+        ),
+      ),
+    );
+  }
+}
+
+class _SignedOutCard extends StatelessWidget {
+  const _SignedOutCard({required this.auth});
+
+  final AuthService auth;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SectionCard(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Icon(Lucide.User, size: 36, color: theme.colorScheme.primary),
+            const SizedBox(height: 12),
+            Text(
+              auth.isAnonymous
+                  ? 'You are using a guest session'
+                  : 'You are signed out',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Sign in with a real account to sync your profile and use Work.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: () => showAuthPage(context, requireSignedIn: true),
+              child: const Text('Sign in'),
+            ),
+          ],
         ),
       ),
     );

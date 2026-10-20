@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../../../shared/widgets/ios_tile_button.dart';
+import '../../auth/pages/auth_page.dart';
 import '../../work/providers/work_session_provider.dart';
 
 class SuggestionItem {
@@ -171,8 +172,14 @@ class ChatEmptyStateSuggestions extends StatelessWidget {
                     label: 'Sign in',
                     icon: Lucide.User,
                     backgroundColor: Theme.of(context).colorScheme.primary,
-                    onTap: () {
-                      workSession.signInForWork();
+                    onTap: () async {
+                      final signedIn = await showAuthPage(
+                        context,
+                        requireSignedIn: true,
+                      );
+                      if (signedIn) {
+                        await workSession.refreshIntegrations();
+                      }
                     },
                   ),
                 ] else if (computerConnected) ...[

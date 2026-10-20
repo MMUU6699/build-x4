@@ -1,0 +1,3 @@
+{
+  "error": "The configured model (mistral-medium-latest) is rate limited by Mistral. Retry later or set WORK_MODEL to an allowed model. Details: API error occurred: Status 429\nBody: {\"object\":\"error\",\"message\":\"Rate limit exceeded\",\"type\":\"rate_limited\",\"param\":null,\"code\":\"1300\",\"raw_status_code\":429}"
+}

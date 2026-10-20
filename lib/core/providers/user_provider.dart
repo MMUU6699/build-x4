@@ -3,9 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/supabase_config.dart';
 
 class UserProvider extends ChangeNotifier {
-  String _name = 'Developer';
-  String _email = 'dev@buildx.ai';
-  String _roleOrBio = 'Principal Engineer & Architect';
+  String _name = '';
+  String _email = '';
+  String _roleOrBio = '';
   String? _avatarType; // 'emoji', 'url', 'file'
   String? _avatarValue;
 
@@ -48,13 +48,14 @@ class UserProvider extends ChangeNotifier {
         }
         final profile = await SupabaseConfig.client
             .from('profiles')
-            .select()
+            .select('display_name, avatar_url')
             .eq('id', user.id)
             .maybeSingle();
         if (profile != null) {
-          if (profile['name'] != null) _name = profile['name'] as String;
-          if (profile['email'] != null) _email = profile['email'] as String;
-          if (profile['bio'] != null) _roleOrBio = profile['bio'] as String;
+          final displayName = profile['display_name'] as String?;
+          if (displayName != null && displayName.trim().isNotEmpty) {
+            _name = displayName;
+          }
           if (profile['avatar_url'] != null) {
             _avatarValue = profile['avatar_url'] as String;
             _avatarType = 'url';
@@ -68,7 +69,7 @@ class UserProvider extends ChangeNotifier {
   }
 
   void setDefaultNameIfUnset(String localizedDefaultName) {
-    if (_name == 'User' && localizedDefaultName.trim().isNotEmpty) {
+    if (_name.trim().isEmpty && localizedDefaultName.trim().isNotEmpty) {
       _name = localizedDefaultName.trim();
       notifyListeners();
     }
@@ -89,7 +90,6 @@ class UserProvider extends ChangeNotifier {
     _email = trimmed;
     notifyListeners();
     await _saveLocal();
-    await _syncSupabase();
   }
 
   Future<void> setRoleOrBio(String roleOrBio) async {
@@ -98,7 +98,6 @@ class UserProvider extends ChangeNotifier {
     _roleOrBio = trimmed;
     notifyListeners();
     await _saveLocal();
-    await _syncSupabase();
   }
 
   Future<void> setAvatarUrl(String url) async {
@@ -162,18 +161,16 @@ class UserProvider extends ChangeNotifier {
 
   Future<void> _syncSupabase() async {
     final user = SupabaseConfig.client.auth.currentUser;
-    if (user != null) {
-      try {
-        await SupabaseConfig.client.from('profiles').upsert({
-          'id': user.id,
-          'name': _name,
-          'bio': _roleOrBio,
-          'avatar_url': _avatarType == 'url' ? _avatarValue : null,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        });
-      } catch (e) {
-        debugPrint('Failed to sync profile with supabase: $e');
-      }
+    if (user == null || user.isAnonymous) return;
+    try {
+      await SupabaseConfig.client.from('profiles').upsert({
+        'id': user.id,
+        if (_name.trim().isNotEmpty) 'display_name': _name.trim(),
+        'avatar_url': _avatarType == 'url' ? _avatarValue : null,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'id');
+    } catch (e) {
+      debugPrint('Failed to sync profile with supabase: $e');
     }
   }
 }

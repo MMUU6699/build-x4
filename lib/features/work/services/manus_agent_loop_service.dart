@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:dio/dio.dart' show CancelToken;
+import 'package:dio/dio.dart'
+    show CancelToken, Dio, Options, ResponseBody, ResponseType;
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show FunctionsHttpException;
@@ -22,7 +23,13 @@ class ManusStartingEvent extends ManusAgentEvent {
 
 class ManusThinkingEvent extends ManusAgentEvent {
   final String text;
-  const ManusThinkingEvent(this.text);
+  final bool append;
+  const ManusThinkingEvent(this.text, {this.append = false});
+}
+
+/// Clears the transient thinking line before a new streamed answer starts.
+class ManusThinkingResetEvent extends ManusAgentEvent {
+  const ManusThinkingResetEvent();
 }
 
 class ManusToolStartedEvent extends ManusAgentEvent {
@@ -98,10 +105,10 @@ class ManusAgentLoopService {
         .join('\n');
 
     return '''
-You are Build X, a general-purpose agent operating a real Linux computer (a Daytona sandbox) for the user.
+You are Build X, a general-purpose agent. A real Linux computer (a Daytona sandbox) is available when the task needs it.
 
 <role>
-You are not a chatbot describing actions. You are the operator of the computer. Use the tools to do the work.
+Answer directly when the user only greets you, asks a simple question, or wants an explanation. Operate the computer only when the task actually requires reading or writing files, running commands, browsing the web, or producing an artifact. Never start the computer just to say hello.
 </role>
 
 <core_rules>
@@ -111,16 +118,16 @@ You are not a chatbot describing actions. You are the operator of the computer. 
 - Never invent page contents, command output, file contents or screenshots. Quote only what a tool returned.
 - If a site blocks the browser, describe what you actually see. Try at most one alternative, or ask one question with `message_ask_user` and stop.
 - Keep `brief` short, human and in the user's language. Never put raw paths, JSON or shell commands in `brief`.
-- Do not call `message_*` tools in a loop. One opening notification is enough.
+- Do not call `message_*` tools in a loop. One opening notification is enough when you use tools.
 </core_rules>
 
 <workflow>
-1. Call `message_notify_user` exactly once at the start with a short acknowledgement.
-2. Perform the task with the appropriate tools.
+1. If the answer needs no computer, reply in plain text immediately. That plain-text answer ends the task; do not call `deliver_result` and do not use tools.
+2. If the task needs the computer, call `message_notify_user` once with a short acknowledgement, then use the appropriate tools.
 3. After every browser action, read the returned page text and interactive element list before choosing the next action. Do not guess what the page contains.
 4. Use `browser_get_text` when the element list is not enough to read the page.
 5. Use `file_read` before editing an existing file. Use `file_write` for a new file.
-6. Finish with `deliver_result` containing the real final answer and the real output file paths. A plain text answer does not finish the task.
+6. When tool work is complete, finish with `deliver_result` containing the real final answer and the real output file paths. Do not keep calling tools after you have answered.
 </workflow>
 
 <language>
@@ -566,6 +573,166 @@ $toolDescriptions
     throw lastError ?? StateError('Chat invocation failed');
   }
 
+  Future<Map<String, dynamic>> _invokeStreamingChat(
+    Map<String, dynamic> body, {
+    required void Function(String delta) onText,
+    void Function()? onStart,
+  }) async {
+    if (SupabaseConfig.isUnconfigured) {
+      throw StateError('Supabase is not configured on this build.');
+    }
+    await SupabaseConfig.ensureValidToken();
+    final accessToken = SupabaseConfig.currentSession?.accessToken;
+    final dio = Dio();
+    final res = await dio.post(
+      '${SupabaseConfig.supabaseUrl}/functions/v1/chat',
+      data: body,
+      options: Options(
+        responseType: ResponseType.stream,
+        validateStatus: (_) => true,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+          'apikey': SupabaseConfig.supabaseAnonKey,
+          if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+        },
+      ),
+    );
+
+    final responseBody = res.data;
+    if (responseBody is! ResponseBody) {
+      throw const _ChatInvocationException(
+        502,
+        'Chat backend returned an unexpected response.',
+      );
+    }
+    final status = res.statusCode ?? 502;
+    if (status >= 400) {
+      final raw = await utf8.decoder.bind(responseBody.stream).join();
+      var message = raw;
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map && decoded['error'] != null) {
+          message = decoded['error'].toString();
+        }
+      } catch (_) {}
+      throw _ChatInvocationException(status, message);
+    }
+
+    final content = StringBuffer();
+    final toolCalls = <int, Map<String, String>>{};
+    onStart?.call();
+
+    await for (final line
+        in responseBody.stream
+            .cast<List<int>>()
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
+      final trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      final payload = trimmed.substring(5).trim();
+      if (payload.isEmpty) continue;
+      if (payload == '[DONE]') break;
+
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(payload);
+      } catch (_) {
+        continue;
+      }
+      if (decoded is! Map) continue;
+
+      final error = decoded['error'];
+      if (error != null) {
+        final message = error is Map
+            ? (error['message'] ?? error['error'] ?? error)
+            : error;
+        throw _ChatInvocationException(502, message.toString());
+      }
+
+      final choices = decoded['choices'];
+      if (choices is! List || choices.isEmpty || choices.first is! Map) {
+        continue;
+      }
+      final choice = choices.first as Map;
+      final rawDelta = choice['delta'] ?? choice['message'];
+      if (rawDelta is! Map) continue;
+      final delta = Map<String, dynamic>.from(rawDelta);
+
+      final text = _streamText(delta['content']);
+      if (text.isNotEmpty) {
+        content.write(text);
+        onText(text);
+      }
+
+      final deltas = delta['tool_calls'] ?? delta['toolCalls'];
+      if (deltas is List) {
+        for (var i = 0; i < deltas.length; i++) {
+          final raw = deltas[i];
+          if (raw is! Map) continue;
+          final tc = Map<String, dynamic>.from(raw);
+          final index = int.tryParse(tc['index']?.toString() ?? '') ?? i;
+          final acc = toolCalls.putIfAbsent(index, () => <String, String>{});
+          final id = tc['id']?.toString();
+          if (id != null && id.isNotEmpty) acc['id'] = id;
+          final fn = tc['function'] is Map
+              ? Map<String, dynamic>.from(tc['function'] as Map)
+              : tc;
+          final name = fn['name']?.toString();
+          if (name != null && name.isNotEmpty) {
+            acc['name'] = '${acc['name'] ?? ''}$name';
+          }
+          final args = fn['arguments'];
+          if (args is String) {
+            acc['arguments'] = '${acc['arguments'] ?? ''}$args';
+          } else if (args != null) {
+            acc['arguments'] = '${acc['arguments'] ?? ''}${jsonEncode(args)}';
+          }
+        }
+      }
+    }
+
+    final calls = <Map<String, dynamic>>[];
+    final indices = toolCalls.keys.toList()..sort();
+    for (final index in indices) {
+      final acc = toolCalls[index]!;
+      final id = acc['id']?.trim().isNotEmpty == true
+          ? acc['id']!
+          : 'call_$index';
+      calls.add({
+        'id': id,
+        'type': 'function',
+        'function': {
+          'name': acc['name'] ?? '',
+          'arguments': acc['arguments'] ?? '{}',
+        },
+      });
+    }
+
+    return {
+      'choices': [
+        {
+          'message': {
+            'content': content.toString(),
+            if (calls.isNotEmpty) 'tool_calls': calls,
+          },
+          'finish_reason': calls.isEmpty ? 'stop' : 'tool_calls',
+        },
+      ],
+    };
+  }
+
+  static String _streamText(dynamic content) {
+    if (content is String) return content;
+    if (content is List) {
+      return content.map((part) {
+        if (part is Map) return part['text']?.toString() ?? '';
+        return '';
+      }).join();
+    }
+    return '';
+  }
+
   Stream<ManusAgentEvent> runAgentLoop({
     required String conversationId,
     required String userRequest,
@@ -615,27 +782,9 @@ $toolDescriptions
 
     _runtime.currentConversationId = conversationId;
 
-    // Real runs bootstrap the user's own sandbox. Injected chatInvoker runs are
-    // unit tests and must not touch the network.
-    if (chatInvoker == null) {
-      yield const ManusStartingEvent();
-      try {
-        final health = await _runtime.checkHealth();
-        if (health['status']?.toString() != 'connected') {
-          throw StateError(
-            'Daytona health check failed: ${health['details'] ?? health['status']}',
-          );
-        }
-        await _runtime.ensureSandbox();
-      } catch (e) {
-        yield ManusErrorEvent('Could not start the computer: $e');
-        return;
-      }
-    }
-
     var iteration = 0;
     var isDone = false;
-    var notified = false;
+    var sandboxReady = false;
     var consecutiveInvalidArgs = 0;
 
     while (iteration < maxIterations && !isDone) {
@@ -648,15 +797,42 @@ $toolDescriptions
       messages[0] = {'role': 'system', 'content': systemPrompt};
 
       Map<String, dynamic> completionData;
+      final requestBody = <String, dynamic>{
+        'messages': List<Map<String, dynamic>>.from(_boundedHistory(messages)),
+        'mode': 'work',
+        'tools': toolSchemas,
+        'tool_choice': 'auto',
+        'stream': true,
+      };
       try {
-        completionData = await _invokeChat({
-          'messages': List<Map<String, dynamic>>.from(
-            _boundedHistory(messages),
-          ),
-          'tools': toolSchemas,
-          'tool_choice': notified ? 'auto' : 'any',
-          'stream': false,
-        });
+        if (chatInvoker != null) {
+          completionData = await _invokeChat({...requestBody, 'stream': false});
+        } else {
+          final controller = StreamController<ManusAgentEvent>();
+          final future = _invokeStreamingChat(
+            requestBody,
+            onStart: () {
+              if (!controller.isClosed) {
+                controller.add(const ManusThinkingResetEvent());
+              }
+            },
+            onText: (delta) {
+              if (!controller.isClosed) {
+                controller.add(ManusThinkingEvent(delta, append: true));
+              }
+            },
+          );
+          future.then<void>(
+            (_) => controller.close(),
+            onError: (Object _) {
+              controller.close();
+            },
+          );
+          await for (final event in controller.stream) {
+            yield event;
+          }
+          completionData = await future;
+        }
       } catch (e) {
         final message = e is _ChatInvocationException
             ? '${e.message} (HTTP ${e.status})'
@@ -680,15 +856,20 @@ $toolDescriptions
 
       if (toolCalls == null || toolCalls.isEmpty) {
         messages.add({'role': 'assistant', 'content': content});
-        if (content.isNotEmpty) yield ManusThinkingEvent(content);
-        messages.add({
-          'role': 'user',
-          'content':
-              'You must use the computer tools and finish with deliver_result. '
-              'Do not answer in plain text.',
-        });
         await _saveHistory(conversationId, messages);
-        continue;
+        if (content.trim().isEmpty) {
+          yield const ManusErrorEvent('The model returned an empty answer.');
+        } else {
+          yield ManusTaskCompletedEvent(
+            WorkTaskResult(
+              summary: content,
+              attachments: const <WorkAttachment>[],
+              completedAt: DateTime.now(),
+            ),
+          );
+        }
+        isDone = true;
+        break;
       }
 
       for (final rawCall in toolCalls) {
@@ -799,6 +980,26 @@ $toolDescriptions
 
         final isMetaTool =
             toolName.startsWith('message_') || toolName == 'deliver_result';
+        // The sandbox is created only when the model actually asks to use the
+        // computer. Greetings and direct answers therefore make zero Daytona
+        // calls. Injected chatInvoker runs are unit tests and stay offline.
+        if (!isMetaTool && chatInvoker == null && !sandboxReady) {
+          yield const ManusStartingEvent();
+          try {
+            final health = await _runtime.checkHealth();
+            if (health['status']?.toString() != 'connected') {
+              throw StateError(
+                'Daytona health check failed: '
+                '${health['details'] ?? health['status']}',
+              );
+            }
+            await _runtime.ensureSandbox();
+            sandboxReady = true;
+          } catch (e) {
+            yield ManusErrorEvent('Could not start the computer: $e');
+            return;
+          }
+        }
         final toolEvent = WorkToolEvent(
           id: toolCallId,
           stepId: 'step_$iteration',
@@ -811,7 +1012,6 @@ $toolDescriptions
         );
 
         if (!isMetaTool) yield ManusToolStartedEvent(toolEvent);
-        if (!notified && toolName == 'message_notify_user') notified = true;
 
         dynamic executionResult;
         String? originalContent;
@@ -826,7 +1026,6 @@ $toolDescriptions
         try {
           if (toolName == 'message_notify_user') {
             final msg = args['message']!.toString();
-            notified = true;
             yield ManusMessageNotifyEvent(msg);
             executionResult = {'status': 'ok'};
           } else if (toolName == 'message_ask_user') {

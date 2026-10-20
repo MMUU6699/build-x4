@@ -589,6 +589,14 @@ serve(async (req: Request) => {
   if (authError || !user) {
     return fail("Unauthorized: Invalid or expired JWT token", 401);
   }
+  if ((user as any).is_anonymous === true || (user as any).isAnonymous === true) {
+    return fail(
+      "Sign in with a real account to use Work.",
+      403,
+      undefined,
+      "not_signed_in",
+    );
+  }
 
   const admin = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",

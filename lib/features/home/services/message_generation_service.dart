@@ -564,22 +564,10 @@ class MessageGenerationService {
       input,
       assistant: assistant,
     );
+    // A draft is temporary only until the first real send. Promote it before
+    // the user/assistant messages are appended so history survives restart.
     if (chatService.isTemporaryConversation(conversationId)) {
-      final userMessage = await chatService.addMessage(
-        conversationId: conversationId,
-        role: 'user',
-        parts: userParts,
-      );
-      final assistantMessage = await createAssistantPlaceholder(
-        conversationId: conversationId,
-        modelId: modelId,
-        providerKey: providerKey,
-      );
-      return (
-        userMessage: userMessage,
-        assistantMessage: assistantMessage,
-        runId: null,
-      );
+      await chatService.promoteConversation(conversationId);
     }
     final result = await chatService.beginSendGeneration(
       conversationId: conversationId,

@@ -129,7 +129,7 @@ void main() {
         expect(find.text('Working'), findsOneWidget);
 
         expect(find.byIcon(Lucide.Monitor), findsOneWidget);
-        expect(find.text("Build X's computer is inactive"), findsOneWidget);
+        expect(find.text("Waiting for a screen…"), findsOneWidget);
 
         if (!mockAgent.completer.isCompleted) mockAgent.completer.complete();
         await provider.cancelWorkTask();

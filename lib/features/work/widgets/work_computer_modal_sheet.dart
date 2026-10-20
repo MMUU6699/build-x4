@@ -99,7 +99,128 @@ class WorkComputerModalSheet extends StatelessWidget {
                   : _buildViewportContent(currentEvent),
             ),
           ),
-          _buildStatusRow(isDark, borderColor, currentEvent),
+          _buildStatusRow(context, isDark, borderColor, workSession),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(
+    BuildContext context,
+    bool isDark,
+    Color borderColor,
+    WorkSessionProvider workSession,
+  ) {
+    final currentEvent = workSession.computerEvent;
+    var categoryLabel = 'tools';
+    var categoryIcon = Lucide.Wrench;
+    if (currentEvent != null) {
+      if (currentEvent.isBrowser) {
+        categoryLabel = 'the browser';
+        categoryIcon = Lucide.Compass;
+      } else if (currentEvent.isShell) {
+        categoryLabel = 'the terminal';
+        categoryIcon = Lucide.Terminal;
+      } else if (currentEvent.isFile) {
+        categoryLabel = 'the file editor';
+        categoryIcon = Lucide.FileCode;
+      } else if (currentEvent.isSearch) {
+        categoryLabel = 'web search';
+        categoryIcon = Lucide.Search;
+      }
+    }
+
+    var actionSubtitle = currentEvent?.brief ?? '';
+    if (currentEvent != null && currentEvent.isBrowser) {
+      final url = currentEvent.browserUrl ?? currentEvent.arguments['url'];
+      if (url != null && url.toString().isNotEmpty) {
+        actionSubtitle = url.toString();
+      }
+    } else if (currentEvent != null && currentEvent.isShell) {
+      final command = currentEvent.arguments['command'];
+      if (command != null && command.toString().isNotEmpty) {
+        actionSubtitle = command.toString();
+      }
+    }
+
+    final running = workSession.phase == WorkSessionPhase.running;
+    final title = currentEvent == null
+        ? 'No computer action yet'
+        : running
+        ? 'Build X is using $categoryLabel'
+        : 'Build X used $categoryLabel';
+    final subtitle = currentEvent == null
+        ? (running
+              ? 'Waiting for the first tool call…'
+              : 'The computer has not run a tool.')
+        : actionSubtitle;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        14 + MediaQuery.viewPaddingOf(context).bottom,
+      ),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF161618) : const Color(0xFFF5F5F5),
+        border: Border(top: BorderSide(color: borderColor)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFEDEDED),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            alignment: Alignment.center,
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.06),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                categoryIcon,
+                size: 16,
+                color: isDark ? Colors.white70 : const Color(0xFF33332B),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : const Color(0xFF33332B),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? const Color(0xFFA5A5A0)
+                        : const Color(0xFF858481),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -200,107 +321,5 @@ class WorkComputerModalSheet extends StatelessWidget {
     if (event.isFile) return FileToolView(event: event);
     if (event.isSearch) return SearchToolView(event: event);
     return GenericToolView(event: event);
-  }
-
-  Widget _buildStatusRow(
-    bool isDark,
-    Color borderColor,
-    WorkToolEvent? currentEvent,
-  ) {
-    var categoryLabel = 'tools';
-    var categoryIcon = Lucide.Wrench;
-    if (currentEvent != null) {
-      if (currentEvent.isBrowser) {
-        categoryLabel = 'the browser';
-        categoryIcon = Lucide.Compass;
-      } else if (currentEvent.isShell) {
-        categoryLabel = 'the terminal';
-        categoryIcon = Lucide.Terminal;
-      } else if (currentEvent.isFile) {
-        categoryLabel = 'the file editor';
-        categoryIcon = Lucide.FileCode;
-      } else if (currentEvent.isSearch) {
-        categoryLabel = 'web search';
-        categoryIcon = Lucide.Search;
-      }
-    }
-
-    var actionSubtitle = currentEvent?.brief ?? 'Waiting for commands...';
-    if (currentEvent != null && currentEvent.isBrowser) {
-      final url = currentEvent.browserUrl ?? currentEvent.arguments['url'];
-      if (url != null && url.toString().isNotEmpty) {
-        actionSubtitle = url.toString();
-      }
-    } else if (currentEvent != null && currentEvent.isShell) {
-      final command = currentEvent.arguments['command'];
-      if (command != null && command.toString().isNotEmpty) {
-        actionSubtitle = command.toString();
-      }
-    }
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF161618) : const Color(0xFFF5F5F5),
-        border: Border(top: BorderSide(color: borderColor)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFEDEDED),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            alignment: Alignment.center,
-            child: Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : Colors.black.withValues(alpha: 0.06),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                categoryIcon,
-                size: 16,
-                color: isDark ? Colors.white70 : const Color(0xFF33332B),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Build X is using $categoryLabel',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : const Color(0xFF33332B),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  actionSubtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark
-                        ? const Color(0xFFA5A5A0)
-                        : const Color(0xFF858481),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

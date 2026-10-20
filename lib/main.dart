@@ -19,6 +19,7 @@ import 'core/providers/settings_provider.dart';
 import 'core/providers/update_provider.dart';
 import 'core/providers/user_provider.dart';
 import 'core/providers/workspace_provider.dart';
+import 'core/services/auth/auth_service.dart';
 import 'core/services/chat/chat_service.dart';
 import 'core/services/linux_window_service.dart';
 import 'core/services/logging/flutter_logger.dart';
@@ -174,6 +175,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider<AppPreferences>.value(value: preferences),
+        ChangeNotifierProvider(create: (_) => AuthService()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => ChatService()),
         ChangeNotifierProvider(create: (_) => ToolApprovalService()),

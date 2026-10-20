@@ -148,20 +148,9 @@ class WorkSessionProvider extends ChangeNotifier {
   /// Work needs a real account: anonymous guest sessions must not own a
   /// sandbox, screenshots, or persisted turns.
   bool get isSignedInForWork {
-    if (SupabaseConfig.isUnconfigured) return true;
+    if (SupabaseConfig.isUnconfigured) return false;
     final user = SupabaseConfig.currentUser;
     return user != null && !user.isAnonymous;
-  }
-
-  /// Leave the anonymous guest session so the auth gate shows the sign-in page.
-  Future<void> signInForWork() async {
-    if (SupabaseConfig.isUnconfigured) return;
-    try {
-      await SupabaseConfig.client.auth.signOut();
-    } finally {
-      await SupabaseConfig.disableGuestMode();
-    }
-    notifyListeners();
   }
 
   Future<void> refreshIntegrations() async {
@@ -178,12 +167,26 @@ class WorkSessionProvider extends ChangeNotifier {
       _supabaseStatus = 'anonymous';
       _daytonaStatus = 'signed_out';
     } else {
-      _supabaseStatus = 'connected';
+      // Validate the session against the server instead of assuming that a
+      // cached token means "connected".
       try {
-        final health = await _agentService.checkComputerHealth();
-        _daytonaStatus = health['status']?.toString() ?? 'disconnected';
+        final checked = await SupabaseConfig.client.auth.getUser();
+        if (checked.user == null) {
+          _supabaseStatus = 'signed_out';
+          _daytonaStatus = 'signed_out';
+        } else {
+          _supabaseStatus = 'connected';
+          try {
+            final health = await _agentService.checkComputerHealth();
+            _daytonaStatus = health['status']?.toString() ?? 'disconnected';
+          } catch (e) {
+            debugPrint('[WorkSessionProvider] computer health failed: $e');
+            _daytonaStatus = 'disconnected';
+          }
+        }
       } catch (e) {
-        debugPrint('[WorkSessionProvider] computer health check failed: $e');
+        debugPrint('[WorkSessionProvider] session check failed: $e');
+        _supabaseStatus = 'disconnected';
         _daytonaStatus = 'disconnected';
       }
     }
@@ -192,9 +195,13 @@ class WorkSessionProvider extends ChangeNotifier {
       provider: 'supabase',
       status: _supabaseStatus,
       details: switch (_supabaseStatus) {
-        'connected' => 'Authenticated user session',
+        'connected' =>
+          user?.email?.isNotEmpty == true
+              ? 'Signed in as ${user!.email}'
+              : 'Authenticated user session',
         'anonymous' => 'Anonymous guest session',
         'signed_out' => 'No active session',
+        'disconnected' => 'Session check failed',
         _ => 'Supabase is not configured',
       },
     );
@@ -413,8 +420,16 @@ class WorkSessionProvider extends ChangeNotifier {
 
     _startingComputer = false;
 
+    if (event is ManusThinkingResetEvent) {
+      _currentThinking = '';
+      notifyListeners();
+      return;
+    }
+
     if (event is ManusThinkingEvent) {
-      _currentThinking = event.text;
+      _currentThinking = event.append
+          ? '${_currentThinking ?? ''}${event.text}'
+          : event.text;
       notifyListeners();
       return;
     }

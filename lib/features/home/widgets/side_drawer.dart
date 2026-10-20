@@ -9,6 +9,8 @@ import '../../../core/services/logging/flutter_logger.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/models/chat_item.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/services/auth/auth_service.dart';
+import '../../auth/pages/auth_page.dart';
 import '../../settings/pages/settings_page.dart';
 import '../../../core/providers/assistant_provider.dart';
 import '../../settings/pages/account_profile_page.dart';
@@ -1465,14 +1467,12 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
     final pinned = <ChatItem>[];
     final rest = <ChatItem>[];
     final resolvedOwnerIds = <String, String?>{};
-    // Single pass: filter assistant + query + mode, split pinned/rest via ChatItem.isPinned.
+    // Single pass: filter assistant + query, split pinned/rest via ChatItem.isPinned.
+    // Chat and Work share one history; the row carries a Work badge instead of
+    // hiding the other mode.
     for (final c in chatService.getAllConversations()) {
-      if (isWorkMode) {
-        if (!c.isWork) continue;
-      } else {
-        if (c.isWork) continue;
-      }
-      if (c.assistantId != null &&
+      if (!c.isWork &&
+          c.assistantId != null &&
           resolvedOwnerIds.putIfAbsent(
                 c.assistantId!,
                 () =>
@@ -1492,6 +1492,7 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
         title: title,
         created: c.updatedAt,
         isPinned: c.isPinned,
+        isWork: c.isWork,
       );
       if (item.isPinned) {
         pinned.add(item);
@@ -2751,86 +2752,143 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
                                             12,
                                           ),
                                           baseColor: Colors.transparent,
-                                          onTap: () {
-                                            Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    const AccountProfilePage(),
-                                              ),
-                                            );
+                                          onTap: () async {
+                                            final auth = context
+                                                .read<AuthService>();
+                                            if (auth.isSignedIn) {
+                                              await Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      const AccountProfilePage(),
+                                                ),
+                                              );
+                                              return;
+                                            }
+                                            await showAuthPage(context);
                                           },
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 6,
                                             vertical: 4,
                                           ),
-                                          child: Row(
-                                            children: [
-                                              avatarWidget(
-                                                widget.userName,
-                                                context.watch<UserProvider>(),
-                                                size: 40,
-                                              ),
-                                              const SizedBox(width: 14),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    Text(
-                                                      context
-                                                              .watch<
-                                                                UserProvider
-                                                              >()
-                                                              .name
-                                                              .isNotEmpty
-                                                          ? context
-                                                                .watch<
-                                                                  UserProvider
-                                                                >()
-                                                                .name
-                                                          : widget.userName,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontSize: _isDesktop
-                                                            ? 14
-                                                            : 15.5,
-                                                        fontWeight:
-                                                            AppFontWeights
-                                                                .emphasis,
-                                                        color: textBase,
-                                                      ),
-                                                    ),
-                                                    if (context
-                                                        .watch<UserProvider>()
-                                                        .roleOrBio
-                                                        .isNotEmpty) ...[
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        context
-                                                            .watch<
-                                                              UserProvider
-                                                            >()
-                                                            .roleOrBio,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: textBase
-                                                              .withValues(
-                                                                alpha: 0.55,
-                                                              ),
+                                          child: Builder(
+                                            builder: (context) {
+                                              final auth = context
+                                                  .watch<AuthService>();
+                                              final profile = context
+                                                  .watch<UserProvider>();
+                                              final name = auth.isSignedIn
+                                                  ? auth.displayName
+                                                  : (auth.isAnonymous
+                                                        ? 'Guest'
+                                                        : 'Not signed in');
+                                              final subtitle = auth.isSignedIn
+                                                  ? (auth.email.isNotEmpty
+                                                        ? auth.email
+                                                        : 'Signed in')
+                                                  : (auth.isAnonymous
+                                                        ? 'Guest session · Chat only'
+                                                        : 'Tap to sign in');
+                                              Widget avatar;
+                                              if (auth.isSignedIn &&
+                                                  auth.avatarUrl.isNotEmpty) {
+                                                avatar = ClipOval(
+                                                  child: Image.network(
+                                                    auth.avatarUrl,
+                                                    width: 40,
+                                                    height: 40,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (_, _, _) =>
+                                                        avatarWidget(
+                                                          name,
+                                                          profile,
+                                                          size: 40,
                                                         ),
-                                                      ),
-                                                    ],
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
+                                                  ),
+                                                );
+                                              } else if (auth.isSignedIn) {
+                                                final letter = name.isNotEmpty
+                                                    ? name
+                                                          .substring(0, 1)
+                                                          .toUpperCase()
+                                                    : '?';
+                                                avatar = Container(
+                                                  width: 40,
+                                                  height: 40,
+                                                  decoration: BoxDecoration(
+                                                    color: cs.primary
+                                                        .withValues(
+                                                          alpha: 0.15,
+                                                        ),
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  alignment: Alignment.center,
+                                                  child: Text(
+                                                    letter,
+                                                    style: TextStyle(
+                                                      color: cs.primary,
+                                                      fontSize: 17,
+                                                      fontWeight: AppFontWeights
+                                                          .emphasis,
+                                                    ),
+                                                  ),
+                                                );
+                                              } else {
+                                                avatar = avatarWidget(
+                                                  name,
+                                                  profile,
+                                                  size: 40,
+                                                );
+                                              }
+                                              return Row(
+                                                children: [
+                                                  avatar,
+                                                  const SizedBox(width: 14),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .center,
+                                                      children: [
+                                                        Text(
+                                                          name,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: TextStyle(
+                                                            fontSize: _isDesktop
+                                                                ? 14
+                                                                : 15.5,
+                                                            fontWeight:
+                                                                AppFontWeights
+                                                                    .emphasis,
+                                                            color: textBase,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 2,
+                                                        ),
+                                                        Text(
+                                                          subtitle,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: textBase
+                                                                .withValues(
+                                                                  alpha: 0.55,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              );
+                                            },
                                           ),
                                         ),
                                       ),
@@ -3558,15 +3616,43 @@ class _ChatTileState extends State<_ChatTile> {
                       ),
                     ),
                     Expanded(
-                      child: Text(
-                        widget.chat.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: _isDesktop ? 14 : 15,
-                          color: widget.textColor,
-                          fontWeight: AppFontWeights.regular,
-                        ),
+                      child: Row(
+                        children: [
+                          if (widget.chat.isWork) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cs.primary.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                'Work',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w600,
+                                  color: cs.primary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Expanded(
+                            child: Text(
+                              widget.chat.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: _isDesktop ? 14 : 15,
+                                color: widget.textColor,
+                                fontWeight: AppFontWeights.regular,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     if (context.select<ChatService, bool>(

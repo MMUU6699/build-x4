@@ -1,12 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
+
 import '../../../core/config/supabase_config.dart';
+import '../../../core/services/auth/auth_service.dart';
 import '../../../shared/widgets/ios_form_text_field.dart';
 import '../../../shared/widgets/section_card.dart';
 
+/// Opens the account screen above the current route.
+///
+/// Returns true only when a real account was signed in.
+Future<bool> showAuthPage(
+  BuildContext context, {
+  bool requireSignedIn = false,
+}) async {
+  final result = await Navigator.of(context).push<bool>(
+    MaterialPageRoute(
+      builder: (_) =>
+          AuthPage(requireSignedIn: requireSignedIn, popOnSuccess: true),
+    ),
+  );
+  return result == true;
+}
+
+enum _AuthMode { signIn, signUp, reset }
+
 class AuthPage extends StatefulWidget {
-  const AuthPage({super.key});
+  const AuthPage({
+    super.key,
+    this.requireSignedIn = false,
+    this.popOnSuccess = false,
+  });
+
+  /// Work needs a non-anonymous user. When true the guest shortcut is hidden.
+  final bool requireSignedIn;
+
+  /// When pushed as a route, return to the caller after a successful sign-in.
+  final bool popOnSuccess;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -15,308 +45,414 @@ class AuthPage extends StatefulWidget {
 class _AuthPageState extends State<AuthPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isSignUp = false;
+  final _confirmController = TextEditingController();
+  final _nameController = TextEditingController();
+
+  _AuthMode _mode = _AuthMode.signIn;
   bool _isLoading = false;
   String? _errorMessage;
+  String? _noticeMessage;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
+  void _setMode(_AuthMode mode) {
+    setState(() {
+      _mode = mode;
+      _errorMessage = null;
+      _noticeMessage = null;
+      _passwordController.clear();
+      _confirmController.clear();
+    });
+  }
+
   Future<void> _submit() async {
+    final auth = context.read<AuthService>();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter both email and password.';
-      });
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _errorMessage = 'Enter a valid email address.');
+      return;
+    }
+    if (_mode != _AuthMode.reset && password.isEmpty) {
+      setState(() => _errorMessage = 'Enter your password.');
+      return;
+    }
+    if (_mode == _AuthMode.signUp && password.length < 8) {
+      setState(
+        () => _errorMessage = 'Use at least 8 characters for the password.',
+      );
+      return;
+    }
+    if (_mode == _AuthMode.signUp && _confirmController.text != password) {
+      setState(() => _errorMessage = 'The passwords do not match.');
       return;
     }
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _noticeMessage = null;
     });
 
     try {
-      if (_isSignUp) {
-        final res = await SupabaseConfig.client.auth.signUp(
-          email: email,
-          password: password,
-        );
-        if (res.user == null) {
-          throw const AuthException('Sign up failed.');
-        }
-      } else {
-        await SupabaseConfig.client.auth.signInWithPassword(
-          email: email,
-          password: password,
-        );
+      switch (_mode) {
+        case _AuthMode.signIn:
+          await auth.signIn(email: email, password: password);
+          await _finishSignedIn();
+        case _AuthMode.signUp:
+          final result = await auth.signUp(
+            email: email,
+            password: password,
+            displayName: _nameController.text,
+          );
+          if (result == AuthSignUpResult.needsEmailConfirmation) {
+            if (!mounted) return;
+            setState(() {
+              _mode = _AuthMode.signIn;
+              _passwordController.clear();
+              _confirmController.clear();
+              _noticeMessage =
+                  'Check $email to confirm your account, then sign in here.';
+            });
+          } else {
+            await _finishSignedIn();
+          }
+        case _AuthMode.reset:
+          await auth.sendPasswordReset(email);
+          if (!mounted) return;
+          setState(() {
+            _noticeMessage =
+                'If an account exists for $email, a password reset email was sent.';
+          });
       }
-    } on AuthException catch (e) {
-      setState(() {
-        _errorMessage = e.message;
-      });
     } catch (e) {
-      final err = e.toString();
-      if (err.contains('your-project.supabase.co') ||
-          err.contains('SocketException')) {
-        setState(() {
-          _errorMessage =
-              'لم يتم ربط خادم Supabase بعد. استخدم زر "الدخول السريع (صلاحيات كاملة)" أدناه للدخول فوراً.';
-        });
-      } else {
-        setState(() {
-          _errorMessage = err;
-        });
-      }
+      if (!mounted) return;
+      setState(() => _errorMessage = AuthService.friendlyError(e));
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _quickAccess() async {
+  Future<void> _finishSignedIn() async {
+    if (!mounted) return;
+    if (widget.popOnSuccess && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    // The root AuthGate watches AuthService and swaps to the home page.
+  }
+
+  Future<void> _continueAsGuest() async {
+    if (widget.requireSignedIn) return;
+    final auth = context.read<AuthService>();
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _noticeMessage = null;
     });
     try {
       await SupabaseConfig.enableGuestMode();
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = e.toString();
-          _isLoading = false;
-        });
+      await auth.refresh();
+      if (!mounted) return;
+      if (widget.popOnSuccess && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(false);
       }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _errorMessage = AuthService.friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _signInWithOAuth(OAuthProvider provider) async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      await SupabaseConfig.client.auth.signInWithOAuth(provider);
-    } on AuthException catch (e) {
-      setState(() {
-        _errorMessage = e.message;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+  String get _title {
+    switch (_mode) {
+      case _AuthMode.signIn:
+        return 'Sign in';
+      case _AuthMode.signUp:
+        return 'Create account';
+      case _AuthMode.reset:
+        return 'Reset password';
     }
+  }
+
+  String get _subtitle {
+    if (widget.requireSignedIn) {
+      return 'Work needs a real account, so your sandbox, files, and screenshots '
+          'belong to you.';
+    }
+    return 'Sign in to sync chats and use Work. You can also continue as a guest.';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final cs = theme.colorScheme;
+    final canPop = Navigator.of(context).canPop();
 
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Build X Logo & Title
-                Center(
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Icon(
-                      LucideIcons.bot,
-                      size: 40,
-                      color: colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Build X',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Cloud AI Agent & Daytona Workspace Client',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                SectionCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          _isSignUp ? 'Create Account' : 'Sign In',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 36, 24, 28),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(
+                            color: cs.primaryContainer,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Icon(
+                            LucideIcons.bot,
+                            size: 36,
+                            color: cs.onPrimaryContainer,
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Build X',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _subtitle,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 26),
+                      SectionCard(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                _title,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              if (_mode == _AuthMode.signUp) ...[
+                                IosFormTextField(
+                                  controller: _nameController,
+                                  label: 'Display name (optional)',
+                                  hintText: 'Your name',
+                                  textCapitalization: TextCapitalization.words,
+                                  onSubmitted: (_) =>
+                                      FocusScope.of(context).nextFocus(),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              IosFormTextField(
+                                controller: _emailController,
+                                label: 'Email',
+                                hintText: 'name@example.com',
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                onSubmitted: (_) =>
+                                    FocusScope.of(context).nextFocus(),
+                              ),
+                              if (_mode != _AuthMode.reset) ...[
+                                const SizedBox(height: 14),
+                                IosFormTextField(
+                                  controller: _passwordController,
+                                  label: 'Password',
+                                  hintText: '••••••••',
+                                  obscureText: true,
+                                  textInputAction: _mode == _AuthMode.signUp
+                                      ? TextInputAction.next
+                                      : TextInputAction.done,
+                                  onSubmitted: _mode == _AuthMode.signIn
+                                      ? (_) => _submit()
+                                      : null,
+                                ),
+                              ],
+                              if (_mode == _AuthMode.signUp) ...[
+                                const SizedBox(height: 14),
+                                IosFormTextField(
+                                  controller: _confirmController,
+                                  label: 'Confirm password',
+                                  hintText: '••••••••',
+                                  obscureText: true,
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: (_) => _submit(),
+                                ),
+                              ],
+                              if (_errorMessage != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  _errorMessage!,
+                                  style: TextStyle(
+                                    color: cs.error,
+                                    fontSize: 13,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ],
+                              if (_noticeMessage != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  _noticeMessage!,
+                                  style: TextStyle(
+                                    color: cs.primary,
+                                    fontSize: 13,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 20),
+                              FilledButton(
+                                onPressed: _isLoading ? null : _submit,
+                                style: FilledButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: _isLoading
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Text(
+                                        _mode == _AuthMode.reset
+                                            ? 'Send reset link'
+                                            : (_mode == _AuthMode.signUp
+                                                  ? 'Create account'
+                                                  : 'Sign in'),
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                              ),
+                              if (_mode == _AuthMode.signIn) ...[
+                                const SizedBox(height: 4),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: _isLoading
+                                        ? null
+                                        : () => _setMode(_AuthMode.reset),
+                                    child: const Text('Forgot password?'),
+                                  ),
+                                ),
+                              ],
+                              if (_mode == _AuthMode.reset) ...[
+                                const SizedBox(height: 4),
+                                Align(
+                                  alignment: Alignment.center,
+                                  child: TextButton(
+                                    onPressed: _isLoading
+                                        ? null
+                                        : () => _setMode(_AuthMode.signIn),
+                                    child: const Text('Back to sign in'),
+                                  ),
+                                ),
+                              ],
+                              if (_mode != _AuthMode.reset) ...[
+                                const SizedBox(height: 4),
+                                TextButton(
+                                  onPressed: _isLoading
+                                      ? null
+                                      : () => _setMode(
+                                          _mode == _AuthMode.signIn
+                                              ? _AuthMode.signUp
+                                              : _AuthMode.signIn,
+                                        ),
+                                  child: Text(
+                                    _mode == _AuthMode.signIn
+                                        ? 'New here? Create an account'
+                                        : 'Already have an account? Sign in',
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (!widget.requireSignedIn) ...[
                         const SizedBox(height: 16),
-                        IosFormTextField(
-                          controller: _emailController,
-                          label: 'Email',
-                          hintText: 'name@example.com',
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 14),
-                        IosFormTextField(
-                          controller: _passwordController,
-                          label: 'Password',
-                          hintText: '••••••••',
-                          obscureText: true,
-                        ),
-                        if (_errorMessage != null) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            _errorMessage!,
-                            style: TextStyle(
-                              color: colorScheme.error,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 20),
-                        FilledButton(
-                          onPressed: _isLoading ? null : _submit,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                        OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _continueAsGuest,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 13),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Text(
-                                  _isSignUp ? 'Sign Up' : 'Sign In',
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                          icon: const Icon(LucideIcons.user, size: 18),
+                          label: const Text('Continue as guest'),
                         ),
-                        const SizedBox(height: 12),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _isSignUp = !_isSignUp;
-                              _errorMessage = null;
-                            });
-                          },
-                          child: Text(
-                            _isSignUp
-                                ? 'Already have an account? Sign In'
-                                : "Don't have an account? Sign Up",
+                        const SizedBox(height: 10),
+                        Text(
+                          'Guest chats stay on this device session and cannot '
+                          'create a cloud computer.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            height: 1.35,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        TextButton.icon(
-                          onPressed: _isLoading ? null : _quickAccess,
-                          icon: const Icon(LucideIcons.zap, size: 16),
-                          label: const Text(
-                            'تسجيل الدخول السريع دون حساب • Quick Access',
-                            style: TextStyle(fontSize: 13),
+                      ] else ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Guest sessions cannot open Work. Sign in above to '
+                          'continue.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            height: 1.35,
                           ),
                         ),
                       ],
-                    ),
+                    ],
                   ),
                 ),
-
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: colorScheme.outlineVariant)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                      child: Text(
-                        'OR',
-                        style: TextStyle(
-                          color: colorScheme.onSurfaceVariant,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    Expanded(child: Divider(color: colorScheme.outlineVariant)),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // OAuth button (GitHub)
-                OutlinedButton.icon(
-                  onPressed: _isLoading
-                      ? null
-                      : () => _signInWithOAuth(OAuthProvider.github),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: const Icon(LucideIcons.gitFork, size: 20),
-                  label: const Text('Continue with GitHub'),
-                ),
-                const SizedBox(height: 12),
-
-                // Quick Access / Full Permissions Button
-                FilledButton.tonalIcon(
-                  onPressed: _isLoading ? null : _quickAccess,
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: const Icon(LucideIcons.zap, size: 20),
-                  label: const Text(
-                    'تسجيل الدخول السريع (صلاحيات كاملة) • Quick Access',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            if (canPop)
+              Positioned(
+                top: 4,
+                left: 8,
+                child: IconButton(
+                  tooltip: 'Back',
+                  onPressed: () => Navigator.of(context).pop(false),
+                  icon: const Icon(LucideIcons.arrowLeft, size: 20),
+                ),
+              ),
+          ],
         ),
       ),
     );

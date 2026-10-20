@@ -3,12 +3,14 @@ class ChatItem {
   final String title;
   final DateTime created;
   final bool isPinned;
+  final bool isWork;
 
   ChatItem({
     required this.id,
     required this.title,
     required this.created,
     this.isPinned = false,
+    this.isWork = false,
   });
 
   ChatItem copyWith({
@@ -16,10 +18,12 @@ class ChatItem {
     String? title,
     DateTime? created,
     bool? isPinned,
+    bool? isWork,
   }) => ChatItem(
     id: id ?? this.id,
     title: title ?? this.title,
     created: created ?? this.created,
     isPinned: isPinned ?? this.isPinned,
+    isWork: isWork ?? this.isWork,
   );
 }

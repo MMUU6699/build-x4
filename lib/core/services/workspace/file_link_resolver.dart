@@ -323,8 +323,9 @@ class FileLinkResolver {
 
   static FileSystemEntity? _entryUnderRoot(String root, String relativePath) {
     try {
-      final canonicalRoot = Directory(root).resolveSymbolicLinksSync();
-      final joined = p.join(p.canonicalize(root), relativePath);
+      final displayRoot = p.normalize(p.absolute(root));
+      final canonicalRoot = Directory(displayRoot).resolveSymbolicLinksSync();
+      final joined = p.normalize(p.join(displayRoot, relativePath));
       final type = FileSystemEntity.typeSync(joined);
       if (type == FileSystemEntityType.notFound) {
         throw const FileLinkException(FileLinkFailure.missing);

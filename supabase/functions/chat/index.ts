@@ -24,8 +24,20 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function fail(message: string, status = 400, field?: string): Response {
-  return json(field ? { error: message, field } : { error: message }, status);
+function fail(
+  message: string,
+  status = 400,
+  field?: string,
+  code?: string,
+): Response {
+  return json(
+    {
+      error: message,
+      ...(field ? { field } : {}),
+      ...(code ? { code } : {}),
+    },
+    status,
+  );
 }
 
 /**
@@ -119,6 +131,18 @@ serve(async (req: Request) => {
     const body = await req.json();
     if (body === null || typeof body !== "object" || Array.isArray(body)) {
       return fail("Request body must be a JSON object", 400, "body");
+    }
+
+    const isWorkRequest = body.mode === "work";
+    const isAnonymous = (user as any).is_anonymous === true ||
+      (user as any).isAnonymous === true;
+    if (isWorkRequest && isAnonymous) {
+      return fail(
+        "Sign in with a real account to use Work.",
+        403,
+        undefined,
+        "not_signed_in",
+      );
     }
 
     const messages = body.messages ?? body.inputs;

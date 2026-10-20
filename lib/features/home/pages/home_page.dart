@@ -19,6 +19,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/services/model_spec/model_spec_resolver.dart';
 import '../../../core/providers/assistant_provider.dart';
 import '../../../core/models/chat_input_data.dart';
+import '../../auth/pages/auth_page.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/compress_context_options.dart';
 import '../../../core/services/android_process_text.dart';
@@ -1581,6 +1582,14 @@ class _HomePageState extends State<HomePage>
       },
       onSend: (text) async {
         final workSession = context.read<WorkSessionProvider>();
+        final chatService = context.read<ChatService>();
+        if (workSession.isWorkMode && !workSession.isSignedInForWork) {
+          final signedIn = await showAuthPage(context, requireSignedIn: true);
+          if (!signedIn) {
+            return ChatInputSubmissionResult.rejected;
+          }
+          await workSession.refreshIntegrations();
+        }
         if (workSession.isWorkMode) {
           debugPrint(
             '[WorkMode Route] Routed to ManusAgentLoopService (not chat path)',
@@ -1592,6 +1601,10 @@ class _HomePageState extends State<HomePage>
           final cid =
               _controller.currentConversation?.id ??
               'conv_${DateTime.now().millisecondsSinceEpoch}';
+          // A Work conversation starts as a draft so an abandoned "new chat"
+          // never pollutes history. The first prompt must make it real before
+          // work_sessions (FK to conversations) and work_turns can persist.
+          await chatService.promoteConversation(cid, title: text.text);
           await _controller.chatController.addMessage(
             role: 'user',
             content: text.text,

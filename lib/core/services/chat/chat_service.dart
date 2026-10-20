@@ -11,6 +11,7 @@ import '../../models/chat_message.dart';
 import '../../models/conversation.dart';
 import '../../models/generation_run.dart';
 import '../../models/message_part.dart';
+import '../../models/workspace_binding.dart';
 
 final class ActiveTimelineSlot {
   const ActiveTimelineSlot({
@@ -165,9 +166,17 @@ class ChatService extends ChangeNotifier {
       truncateIndex: -1,
       versionSelections: const <String, int>{},
       chatSuggestions: const <String>[],
-      extras: map['mistral_conversation_id'] != null
-          ? {'mistral_conversation_id': map['mistral_conversation_id']}
-          : const <String, dynamic>{},
+      extras: {
+        'mode': (map['mode'] as String?)?.trim().isNotEmpty == true
+            ? map['mode'] as String
+            : 'chat',
+        if (map['workspace_id'] != null)
+          WorkspaceBinding.keyId: map['workspace_id'] as String,
+        if (map['mistral_conversation_id'] != null)
+          'mistral_conversation_id': map['mistral_conversation_id'],
+        if (map['plan_state'] != null) 'plan_state': map['plan_state'],
+        if (map['attachments'] != null) 'attachments': map['attachments'],
+      },
     );
   }
 
@@ -286,6 +295,13 @@ class ChatService extends ChangeNotifier {
         ? title.trim()
         : _defaultTitle;
 
+    final effectiveExtras = <String, dynamic>{
+      ...(extras ??
+          newConversationExtras?.call(assistantId) ??
+          const <String, dynamic>{}),
+      if (workspaceId != null) WorkspaceBinding.keyId: workspaceId,
+    };
+
     final conversation = Conversation(
       id: newId,
       title: effectiveTitle,
@@ -293,10 +309,7 @@ class ChatService extends ChangeNotifier {
       updatedAt: now,
       messageIds: const <String>[],
       assistantId: assistantId,
-      extras:
-          extras ??
-          (newConversationExtras?.call(assistantId) ??
-              const <String, dynamic>{}),
+      extras: effectiveExtras,
     );
 
     _conversationsCache[newId] = conversation;
@@ -314,7 +327,13 @@ class ChatService extends ChangeNotifier {
             'user_id': user.id,
             'title': effectiveTitle,
             'assistant_id': assistantId,
-            'workspace_id': workspaceId,
+            'workspace_id': effectiveExtras[WorkspaceBinding.keyId],
+            'mode': conversation.mode,
+            'is_pinned': conversation.isPinned,
+            if (effectiveExtras['plan_state'] != null)
+              'plan_state': effectiveExtras['plan_state'],
+            if (effectiveExtras['attachments'] != null)
+              'attachments': effectiveExtras['attachments'],
             'created_at': now.toIso8601String(),
             'updated_at': now.toIso8601String(),
           });
@@ -343,6 +362,85 @@ class ChatService extends ChangeNotifier {
       isTemporary: temporary ?? true,
       extras: extras,
     );
+  }
+
+  /// Promote a temporary draft into a real conversation.
+  ///
+  /// Drafts are used while the composer is empty so an abandoned "new chat"
+  /// never pollutes history. The first send must call this before the user or
+  /// assistant message is appended; otherwise every write is skipped and the
+  /// conversation disappears on restart.
+  Future<void> promoteConversation(String id, {String? title}) async {
+    final conversation = _conversationsCache[id];
+    if (conversation == null) return;
+    if (!_temporaryConversations.remove(id)) return;
+
+    final now = DateTime.now().toUtc();
+    final updated = conversation.copyWith(
+      title: (title != null && title.trim().isNotEmpty) ? title.trim() : null,
+      updatedAt: now,
+    );
+    _conversationsCache[id] = updated;
+    _sharedConversations[id] = updated;
+    _bumpConversationListRevision();
+    notifyListeners();
+
+    final user = SupabaseConfig.client.auth.currentUser;
+    if (user == null) return;
+    try {
+      await SupabaseConfig.client.from('conversations').upsert({
+        'id': id,
+        'user_id': user.id,
+        ..._conversationColumns(updated),
+        'created_at': updated.createdAt.toUtc().toIso8601String(),
+      }, onConflict: 'id');
+
+      final messages = _messagesCache[id] ?? const <ChatMessage>[];
+      for (var i = 0; i < messages.length; i++) {
+        await _upsertMessageRow(messages[i], i);
+      }
+    } catch (e) {
+      debugPrint('Failed to promote conversation in Supabase: $e');
+    }
+  }
+
+  Map<String, dynamic> _conversationColumns(Conversation conversation) {
+    final extras = conversation.extras;
+    return {
+      'title': conversation.title,
+      'assistant_id': conversation.assistantId,
+      'workspace_id': extras[WorkspaceBinding.keyId],
+      'is_pinned': conversation.isPinned,
+      'mode': conversation.mode,
+      if (extras['mistral_conversation_id'] != null)
+        'mistral_conversation_id': extras['mistral_conversation_id'],
+      if (extras['plan_state'] != null) 'plan_state': extras['plan_state'],
+      if (extras['attachments'] != null) 'attachments': extras['attachments'],
+      'updated_at': conversation.updatedAt.toUtc().toIso8601String(),
+    };
+  }
+
+  Future<void> _upsertMessageRow(ChatMessage message, int order) async {
+    final user = SupabaseConfig.client.auth.currentUser;
+    if (user == null) return;
+    final partsJson = [
+      for (final part in message.parts)
+        {'kind': part.kind, 'payload': part.encodePayload()},
+    ];
+    await SupabaseConfig.client.from('messages').upsert({
+      'id': message.id,
+      'conversation_id': message.conversationId,
+      'user_id': user.id,
+      'role': message.role,
+      'content': message.content,
+      'parts': partsJson,
+      'prompt_tokens': message.promptTokens,
+      'completion_tokens': message.completionTokens,
+      'total_tokens': message.totalTokens,
+      'duration_ms': message.durationMs,
+      'message_order': order,
+      'created_at': message.timestamp.toUtc().toIso8601String(),
+    }, onConflict: 'id');
   }
 
   Future<void> updateConversationTitle(String id, String title) async {
@@ -460,7 +558,7 @@ class ChatService extends ChangeNotifier {
         if (user != null) {
           await SupabaseConfig.client
               .from('conversations')
-              .update({'extras': updatedExtras})
+              .update(_conversationColumns(updated))
               .eq('id', id);
         }
       } catch (e) {
@@ -1119,24 +1217,7 @@ class ChatService extends ChangeNotifier {
       try {
         final user = SupabaseConfig.client.auth.currentUser;
         if (user != null) {
-          final partsJson = [
-            for (final part in effectiveMessage.parts)
-              {'kind': part.kind, 'payload': part.encodePayload()},
-          ];
-          await SupabaseConfig.client.from('messages').insert({
-            'id': effectiveMessage.id,
-            'conversation_id': effectiveConvId,
-            'user_id': user.id,
-            'role': effectiveMessage.role,
-            'content': effectiveMessage.content,
-            'parts': partsJson,
-            'prompt_tokens': effectiveMessage.promptTokens,
-            'completion_tokens': effectiveMessage.completionTokens,
-            'total_tokens': effectiveMessage.totalTokens,
-            'duration_ms': effectiveMessage.durationMs,
-            'message_order': list.length - 1,
-            'created_at': effectiveMessage.timestamp.toUtc().toIso8601String(),
-          });
+          await _upsertMessageRow(effectiveMessage, list.length - 1);
           await SupabaseConfig.client
               .from('conversations')
               .update({'updated_at': DateTime.now().toUtc().toIso8601String()})

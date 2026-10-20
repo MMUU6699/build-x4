@@ -67,7 +67,9 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
     final workSession = context.watch<WorkSessionProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Visible iff session phase == running in Work mode
+    // Visible while Work is running. Before the first tool call the card is
+    // honestly labelled inactive; a direct answer never starts a computer and
+    // the card disappears when the turn completes.
     final bool isVisible =
         workSession.isWorkMode && workSession.phase == WorkSessionPhase.running;
     final currentEvent = workSession.currentEvent;
@@ -251,10 +253,11 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
     final events = workSession.currentTurn?.events ?? const <WorkToolEvent>[];
     // 0. If no events have run yet, show inactive computer thumbnail
     if (events.isEmpty) {
-      return _buildInactiveThumbnail(isDark);
+      return _buildInactiveThumbnail(isDark, workSession.isStartingComputer);
     }
 
     // 1. Look for the latest real screenshot in this turn.
+    final lastEvent = events.last;
     String? latestScreenshot;
     for (final ev in events.reversed) {
       final url = workSession.screenshotUrlFor(ev);
@@ -271,7 +274,9 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
           fit: BoxFit.cover,
           width: double.infinity,
           height: double.infinity,
-          errorBuilder: (_, __, ___) => _buildTerminalPreview(workSession),
+          errorBuilder: (_, __, ___) => lastEvent.isShell
+              ? _buildTerminalPreview(workSession)
+              : _buildEventPreview(isDark, lastEvent),
         );
       } else {
         try {
@@ -285,17 +290,24 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
-            errorBuilder: (_, __, ___) => _buildTerminalPreview(workSession),
+            errorBuilder: (_, __, ___) => lastEvent.isShell
+                ? _buildTerminalPreview(workSession)
+                : _buildEventPreview(isDark, lastEvent),
           );
         } catch (_) {}
       }
     }
 
-    // 2. Real terminal preview if no screenshot captured yet
-    return _buildTerminalPreview(workSession);
+    // 2. Real shell output when available.
+    if (lastEvent.isShell) {
+      return _buildTerminalPreview(workSession);
+    }
+
+    // 3. Real non-shell event summary, not a fake terminal prompt.
+    return _buildEventPreview(isDark, lastEvent);
   }
 
-  Widget _buildInactiveThumbnail(bool isDark) {
+  Widget _buildInactiveThumbnail(bool isDark, bool starting) {
     return Container(
       color: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF3F3F5),
       child: Center(
@@ -303,13 +315,14 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Lucide.Monitor,
+              starting ? Lucide.Loader : Lucide.Monitor,
               size: 14,
               color: isDark ? Colors.white38 : Colors.black38,
             ),
             const SizedBox(height: 2),
             Text(
-              "Build X's computer is inactive",
+              starting ? 'Starting computer…' : 'Waiting for a screen…',
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 4.0,
                 color: isDark ? Colors.white38 : Colors.black38,
@@ -317,6 +330,45 @@ class _WorkComputerTrayState extends State<WorkComputerTray>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildEventPreview(bool isDark, WorkToolEvent event) {
+    final text = event.result.trim().isNotEmpty
+        ? event.result.trim()
+        : (event.brief.trim().isNotEmpty ? event.brief.trim() : event.toolName);
+    return Container(
+      color: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF3F3F5),
+      padding: const EdgeInsets.all(4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            event.toolName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 4.5,
+              color: isDark ? Colors.white70 : Colors.black54,
+              fontFamily: 'monospace',
+              height: 1.0,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            text,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 4.0,
+              color: isDark ? Colors.white54 : Colors.black45,
+              fontFamily: 'monospace',
+              height: 1.0,
+            ),
+          ),
+        ],
       ),
     );
   }
